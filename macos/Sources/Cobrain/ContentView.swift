@@ -6,7 +6,11 @@ struct ContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             RibbonView(model: model)
-            PagesView(model: model)
+            HStack(spacing: 0) {
+                NavigationPane(model: model)
+                Divider()
+                PagesView(model: model)
+            }
         }
             .navigationTitle(model.title)
             .toolbar {

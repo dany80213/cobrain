@@ -33,14 +33,20 @@ struct RibbonView: View {
             }
             .padding(.horizontal, 8).padding(.top, 4)
             Divider()
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: 0) {
-                    ForEach(groups, id: \.name) { g in
-                        GroupView(name: g.name, commands: g.commands, model: model) { pending = $0 }
-                        Divider().padding(.vertical, 4)
+            Group {
+                if tab == "Home" {
+                    HomeRibbon(model: model) { pending = $0 }
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(alignment: .top, spacing: 0) {
+                            ForEach(groups, id: \.name) { g in
+                                GroupView(name: g.name, commands: g.commands, model: model) { pending = $0 }
+                                Divider().padding(.vertical, 4)
+                            }
+                        }
+                        .padding(.horizontal, 6)
                     }
                 }
-                .padding(.horizontal, 6)
             }
             .frame(height: 112)
             .background(Color(nsColor: .controlBackgroundColor))

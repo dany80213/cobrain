@@ -54,6 +54,13 @@ pub extern "C" fn cobrain_new_blank() -> *mut CobrainDoc {
     .unwrap_or(std::ptr::null_mut())
 }
 
+/// New document holding WordCraft's built-in sample ("The Open Studio Handbook"). Null on failure.
+#[unsafe(no_mangle)]
+pub extern "C" fn cobrain_new_sample() -> *mut CobrainDoc {
+    guard(|| Some(Box::into_raw(Box::new(CobrainDoc { session: Session::new(wordcraft_engine::sample::sample_document()) }))))
+        .unwrap_or(std::ptr::null_mut())
+}
+
 /// Open a document (.docx, .doc, .rtf, .odt, .md, .txt, .html…). Null on failure.
 ///
 /// # Safety
@@ -209,6 +216,32 @@ pub unsafe extern "C" fn cobrain_commands(doc: *mut CobrainDoc) -> *mut c_char {
     .unwrap_or(std::ptr::null_mut())
 }
 
+/// Headings for the Navigation pane: JSON `[{"level":1,"text":"…","page":0}]`. Free with
+/// `cobrain_free_string`.
+///
+/// # Safety
+/// `doc` must come from this library.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_outline(doc: *mut CobrainDoc) -> *mut c_char {
+    guard(|| {
+        // SAFETY: caller contract.
+        let doc = unsafe { doc.as_mut()? };
+        let state = doc.session.run("outline.state", &serde_json::json!({})).ok()?;
+        let levels: Vec<u64> = state.get("levels")?.as_array()?.iter().filter_map(|v| v.as_u64()).collect();
+        let mut out = Vec::new();
+        for (i, block) in doc.session.doc.body.iter().enumerate() {
+            let level = levels.get(i).copied().unwrap_or(10);
+            if let wordcraft_engine::doc::Block::Para(p) = &**block {
+                if level < 10 {
+                    out.push(serde_json::json!({ "level": level, "text": p.plain_text(), "block": i }));
+                }
+            }
+        }
+        Some(to_cstring(serde_json::Value::Array(out).to_string()))
+    })
+    .unwrap_or(std::ptr::null_mut())
+}
+
 /// Release a string returned by this library.
 ///
 /// # Safety
@@ -287,7 +320,12 @@ mod tests {
             let (mut pg, mut x, mut t, mut hh) = (0u32, 0f32, 0f32, 0f32);
             assert_eq!(cobrain_caret(doc, &mut pg, &mut x, &mut t, &mut hh), 0);
             assert_eq!(cobrain_click(doc, 0, x, t + 1.0), 0);
+            let c = cobrain_commands(doc);
+            let json = CStr::from_ptr(c).to_string_lossy().into_owned();
+            cobrain_free_string(c);
+            assert!(json.contains("Home \u{203a} Font"), "catalog should list Home groups");
             cobrain_free(doc);
         }
     }
 }
+

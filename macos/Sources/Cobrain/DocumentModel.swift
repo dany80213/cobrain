@@ -11,22 +11,60 @@ final class DocumentModel: ObservableObject {
     @Published var lastError: String?
     private(set) lazy var catalog: [CommandInfo] = engine.commands()
 
+    @Published private(set) var format: [String: Any] = [:]
+    @Published private(set) var styles: [(id: String, name: String)] = []
+    @Published private(set) var headings: [Engine.Heading] = []
+    @Published private(set) var wordCount = 0
+
     init() {
-        engine = Engine()!
+        engine = Engine(sample: true)!
+        refresh()
     }
+
+    /// Re-read the state the chrome shows (formatting at the caret, styles, headings).
+    func refresh() {
+        if case .success(let f) = engine.run("format.state"), let d = f as? [String: Any] { format = d }
+        if styles.isEmpty, case .success(let l) = engine.run("styles.list"), let arr = l as? [[String: Any]] {
+            styles = arr.filter { ($0["kind"] as? String) == "paragraph" && ($0["quick"] as? Bool) == true }
+                .compactMap { d in (d["id"] as? String).flatMap { id in (d["name"] as? String).map { (id, $0) } } }
+        }
+        headings = engine.outline()
+    }
+
+    func isOn(_ key: String) -> Bool { (format[key] as? Bool) == true }
+
 
     var title: String { fileURL?.lastPathComponent ?? "Untitled" }
 
     func run(_ id: String, _ params: [String: Any] = [:]) {
         switch engine.run(id, params) {
-        case .success: lastError = nil
+        case .success(let r):
+            lastError = nil
+            handleClipboard(id, r)
         case .failure(let e): lastError = e.message
         }
+        refresh()
         revision += 1
+    }
+
+    /// Cut/Copy put the engine's clipboard payload on the system pasteboard; Paste feeds it back.
+    private func handleClipboard(_ id: String, _ result: Any) {
+        guard id == "edit.copy" || id == "edit.cut", let d = result as? [String: Any] else { return }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        if let html = d["html"] as? String { pb.setString(html, forType: .html) }
+        if let text = d["text"] as? String { pb.setString(text, forType: .string) }
+    }
+
+    func paste() {
+        let pb = NSPasteboard.general
+        if let html = pb.string(forType: .html) { run("edit.paste", ["html": html, "text": pb.string(forType: .string) ?? ""]) }
+        else if let t = pb.string(forType: .string) { run("edit.paste", ["text": t]) }
     }
 
     func click(page: Int, x: CGFloat, y: CGFloat) {
         engine.click(page: page, x: x, y: y)
+        refresh()
         revision += 1
     }
 
@@ -34,6 +72,7 @@ final class DocumentModel: ObservableObject {
         guard let e = Engine() else { return }
         engine = e
         fileURL = nil
+        refresh()
         revision += 1
     }
 
@@ -53,6 +92,7 @@ final class DocumentModel: ObservableObject {
         fileURL = url
         lastError = nil
         NSDocumentController.shared.noteNewRecentDocumentURL(url)
+        refresh()
         revision += 1
     }
 

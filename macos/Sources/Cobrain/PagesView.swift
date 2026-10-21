@@ -150,6 +150,8 @@ struct PagesView: NSViewRepresentable {
         scroll.backgroundColor = .underPageBackgroundColor
         let view = PagesNSView(model: model)
         scroll.documentView = view
+        scroll.contentView.postsFrameChangedNotifications = true
+        NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: scroll.contentView, queue: .main) { [weak view] _ in view?.reload() }
         DispatchQueue.main.async { view.window?.makeFirstResponder(view) }
         return scroll
     }

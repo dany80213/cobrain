@@ -20,6 +20,11 @@ final class Engine {
         handle = h
     }
 
+    init?(sample: Bool) {
+        guard let h = cobrain_new_sample() else { return nil }
+        handle = h
+    }
+
     init?(path: String) {
         guard let h = cobrain_open(path) else { return nil }
         handle = h
@@ -61,6 +66,19 @@ final class Engine {
             guard let id = d["id"] as? String, let label = d["label"] as? String else { return nil }
             return CommandInfo(id: id, label: label, location: d["location"] as? String ?? "",
                                shortcut: d["shortcut"] as? String ?? "", params: d["params"] as? String ?? "{}")
+        }
+    }
+
+    struct Heading: Identifiable { var id: Int; var level: Int; var text: String }
+
+    /// Headings for the Navigation pane.
+    func outline() -> [Heading] {
+        guard let out = cobrain_outline(handle) else { return [] }
+        defer { cobrain_free_string(out) }
+        let raw = (try? JSONSerialization.jsonObject(with: Data(String(cString: out).utf8))) as? [[String: Any]] ?? []
+        return raw.compactMap { d in
+            guard let b = d["block"] as? Int, let l = d["level"] as? Int, let t = d["text"] as? String else { return nil }
+            return Heading(id: b, level: l, text: t)
         }
     }
 

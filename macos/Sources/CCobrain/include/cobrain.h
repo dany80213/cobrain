@@ -9,6 +9,7 @@ typedef struct CobrainDoc CobrainDoc;
 
 char *cobrain_engine_version(void);
 CobrainDoc *cobrain_new_blank(void);
+CobrainDoc *cobrain_new_sample(void);
 CobrainDoc *cobrain_open(const char *path);
 int32_t cobrain_save(CobrainDoc *doc, const char *path);
 void cobrain_free(CobrainDoc *doc);
@@ -22,6 +23,7 @@ int32_t cobrain_click(CobrainDoc *doc, uint32_t page, float x, float y);
 int32_t cobrain_caret(CobrainDoc *doc, uint32_t *page, float *x, float *top, float *height);
 
 char *cobrain_commands(CobrainDoc *doc);
+char *cobrain_outline(CobrainDoc *doc);
 char *cobrain_run(CobrainDoc *doc, const char *id, const char *params_json);
 void cobrain_free_string(char *s);
 

@@ -1,7 +1,31 @@
+import AppKit
 import SwiftUI
+
+/// `Cobrain --snapshot out.png [file]`: render the main window to a PNG and exit (no screen access needed).
+@MainActor func snapshotIfRequested() {
+    let args = CommandLine.arguments
+    guard let i = args.firstIndex(of: "--snapshot"), args.indices.contains(i + 1) else { return }
+    _ = NSApplication.shared
+    let model = DocumentModel()
+    if args.indices.contains(i + 2) { model.open(URL(fileURLWithPath: args[i + 2])) }
+    let host = NSHostingView(rootView: ContentView(model: model).frame(width: 1100, height: 760))
+    host.frame = NSRect(x: 0, y: 0, width: 1100, height: 760)
+    let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+    window.contentView = host
+    host.layoutSubtreeIfNeeded()
+    RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+    host.layoutSubtreeIfNeeded()
+    if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+        host.cacheDisplay(in: host.bounds, to: rep)
+        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: args[i + 1]))
+    }
+    exit(0)
+}
 
 @main
 struct CobrainApp: App {
+    init() { snapshotIfRequested() }
+
     @StateObject private var model = DocumentModel()
 
     var body: some Scene {
