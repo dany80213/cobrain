@@ -1,0 +1,21 @@
+[package]
+name = "cobrain-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Cobrain: C-ABI bridge between the WordCraft engine and the native Swift macOS app"
+
+# Not `[lints] workspace = true`: this is the one crate allowed to use `unsafe`
+# (the FFI boundary). It keeps the other workspace rules below.
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+wordcraft-engine = { workspace = true }
+wordcraft-doc = { workspace = true }
+wordcraft-layout = { workspace = true }
+wordcraft-render = { workspace = true }
+serde_json = { workspace = true }

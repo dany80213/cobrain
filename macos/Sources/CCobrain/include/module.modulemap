@@ -1,0 +1,4 @@
+module CCobrain {
+    header "cobrain.h"
+    export *
+}

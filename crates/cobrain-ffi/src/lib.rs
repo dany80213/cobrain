@@ -1,0 +1,278 @@
+//! C ABI for the Cobrain macOS app (Swift).
+//!
+//! The Swift side holds an opaque `CobrainDoc*` and talks to the engine only through:
+//! open/save, page rasters, and `cobrain_run` (the engine's JSON command registry: the same
+//! entry point the egui UI, the CLI and MCP use). Every pointer returned here must be released
+//! with the matching `cobrain_free_*` function.
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
+
+use std::ffi::{CStr, CString, c_char};
+use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::path::Path;
+
+use wordcraft_engine::Session;
+use wordcraft_engine::doc::StoryRef;
+use wordcraft_engine::render::{RenderOptions, render_page};
+
+/// Opaque document handle (one editing session).
+pub struct CobrainDoc {
+    session: Session,
+}
+
+fn to_cstring(s: String) -> *mut c_char {
+    CString::new(s.replace('\0', " ")).map(CString::into_raw).unwrap_or(std::ptr::null_mut())
+}
+
+/// # Safety
+/// `p` must be null or a valid NUL-terminated string.
+unsafe fn from_cstr<'a>(p: *const c_char) -> Option<&'a str> {
+    if p.is_null() {
+        return None;
+    }
+    // SAFETY: caller contract above.
+    unsafe { CStr::from_ptr(p) }.to_str().ok()
+}
+
+/// Run `f`, turning a panic into `None` so it never unwinds across the FFI boundary.
+fn guard<T>(f: impl FnOnce() -> Option<T>) -> Option<T> {
+    catch_unwind(AssertUnwindSafe(f)).ok().flatten()
+}
+
+/// Engine version string. Free with `cobrain_free_string`.
+#[unsafe(no_mangle)]
+pub extern "C" fn cobrain_engine_version() -> *mut c_char {
+    to_cstring(env!("CARGO_PKG_VERSION").to_string())
+}
+
+/// New blank document. Null on failure.
+#[unsafe(no_mangle)]
+pub extern "C" fn cobrain_new_blank() -> *mut CobrainDoc {
+    guard(|| {
+        let doc = wordcraft_engine::blank_document(&wordcraft_engine::Region::default());
+        Some(Box::into_raw(Box::new(CobrainDoc { session: Session::new(doc) })))
+    })
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// Open a document (.docx, .doc, .rtf, .odt, .md, .txt, .html…). Null on failure.
+///
+/// # Safety
+/// `path` must be a valid NUL-terminated UTF-8 string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_open(path: *const c_char) -> *mut CobrainDoc {
+    guard(|| {
+        // SAFETY: forwarded caller contract.
+        let path = unsafe { from_cstr(path) }?;
+        let doc = wordcraft_engine::io::open_path(Path::new(path)).ok()?;
+        let mut session = Session::new(doc);
+        session.path = Some(path.into());
+        session.file_name = Path::new(path).file_name().map(|n| n.to_string_lossy().into_owned());
+        Some(Box::into_raw(Box::new(CobrainDoc { session })))
+    })
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// Save to `path`; the format follows the extension. Returns 0 on success.
+///
+/// # Safety
+/// `doc` must come from this library; `path` must be a valid NUL-terminated UTF-8 string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_save(doc: *mut CobrainDoc, path: *const c_char) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded caller contract.
+        let (doc, path) = unsafe { (doc.as_mut()?, from_cstr(path)?) };
+        wordcraft_engine::io::save_path(Path::new(path), &doc.session.doc).ok()?;
+        doc.session.stamp_save();
+        Some(0)
+    })
+    .unwrap_or(-1)
+}
+
+/// Release a document.
+///
+/// # Safety
+/// `doc` must be null or come from this library, and not be used afterwards.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_free(doc: *mut CobrainDoc) {
+    if !doc.is_null() {
+        // SAFETY: caller contract.
+        drop(unsafe { Box::from_raw(doc) });
+    }
+}
+
+/// Number of laid-out pages (0 on failure).
+///
+/// # Safety
+/// `doc` must come from this library.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_page_count(doc: *mut CobrainDoc) -> u32 {
+    guard(|| {
+        // SAFETY: caller contract.
+        let doc = unsafe { doc.as_mut()? };
+        Some(doc.session.layout().pages.len() as u32)
+    })
+    .unwrap_or(0)
+}
+
+/// Page size in points. Returns 0 on success.
+///
+/// # Safety
+/// `doc` must come from this library; `w` and `h` must be valid for writes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_page_size(doc: *mut CobrainDoc, index: u32, w: *mut f32, h: *mut f32) -> i32 {
+    guard(|| {
+        // SAFETY: caller contract.
+        let doc = unsafe { doc.as_mut()? };
+        let layout = doc.session.layout();
+        let page = layout.pages.get(index as usize)?;
+        // SAFETY: caller contract.
+        unsafe {
+            *w.as_mut()? = page.w;
+            *h.as_mut()? = page.h;
+        }
+        Some(0)
+    })
+    .unwrap_or(-1)
+}
+
+/// Rasterise a page to straight (non-premultiplied) RGBA8. `scale` is pixels per point.
+/// Returns null on failure; free with `cobrain_free_buffer(ptr, width * height * 4)`.
+///
+/// # Safety
+/// `doc` must come from this library; `out_w` and `out_h` must be valid for writes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_render_page(doc: *mut CobrainDoc, index: u32, scale: f32, out_w: *mut u32, out_h: *mut u32) -> *mut u8 {
+    guard(|| {
+        // SAFETY: caller contract.
+        let doc = unsafe { doc.as_mut()? };
+        let layout = doc.session.layout();
+        let page = layout.pages.get(index as usize)?;
+        let img = render_page(&doc.session.doc, page, scale.clamp(0.1, 8.0), &RenderOptions::default());
+        let pixels = img.to_straight().into_boxed_slice();
+        // SAFETY: caller contract.
+        unsafe {
+            *out_w.as_mut()? = img.width;
+            *out_h.as_mut()? = img.height;
+        }
+        Some(Box::into_raw(pixels) as *mut u8)
+    })
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// Release a buffer from `cobrain_render_page`.
+///
+/// # Safety
+/// `ptr`/`len` must be exactly what `cobrain_render_page` produced (`len = width * height * 4`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_free_buffer(ptr: *mut u8, len: usize) {
+    if !ptr.is_null() {
+        // SAFETY: caller contract.
+        drop(unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr, len)) });
+    }
+}
+
+/// Run an engine command (`id`, JSON `params`). Returns `{"ok": …}` or `{"error": "…"}` as a
+/// JSON string; free with `cobrain_free_string`. Null only if the handle or id is invalid.
+///
+/// # Safety
+/// `doc` must come from this library; `id` and `params_json` must be valid NUL-terminated
+/// UTF-8 strings (`params_json` may be null for `{}`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_run(doc: *mut CobrainDoc, id: *const c_char, params_json: *const c_char) -> *mut c_char {
+    guard(|| {
+        // SAFETY: caller contract.
+        let (doc, id) = unsafe { (doc.as_mut()?, from_cstr(id)?) };
+        // SAFETY: caller contract.
+        let params = unsafe { from_cstr(params_json) }.unwrap_or("{}");
+        let params: serde_json::Value = serde_json::from_str(params).unwrap_or_else(|_| serde_json::json!({}));
+        let out = match doc.session.run(id, &params) {
+            Ok(v) => serde_json::json!({ "ok": v }),
+            Err(e) => serde_json::json!({ "error": e.to_string() }),
+        };
+        Some(to_cstring(out.to_string()))
+    })
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// Release a string returned by this library.
+///
+/// # Safety
+/// `s` must be null or come from this library.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_free_string(s: *mut c_char) {
+    if !s.is_null() {
+        // SAFETY: caller contract.
+        drop(unsafe { CString::from_raw(s) });
+    }
+}
+
+/// Place the caret at point (x, y) (page points) on `page`. Returns 0 on success.
+///
+/// # Safety
+/// `doc` must come from this library.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_click(doc: *mut CobrainDoc, page: u32, x: f32, y: f32) -> i32 {
+    guard(|| {
+        // SAFETY: caller contract.
+        let doc = unsafe { doc.as_mut()? };
+        let pos = doc.session.layout().hit(page as usize, x, y, StoryRef::Body)?;
+        doc.session.run("caret.set", &serde_json::json!({ "pos": pos })).ok()?;
+        Some(0)
+    })
+    .unwrap_or(-1)
+}
+
+/// Caret rectangle of the selection focus: page index and x/top/height in page points.
+/// Returns 0 on success.
+///
+/// # Safety
+/// `doc` must come from this library; the out pointers must be valid for writes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_caret(doc: *mut CobrainDoc, page: *mut u32, x: *mut f32, top: *mut f32, height: *mut f32) -> i32 {
+    guard(|| {
+        // SAFETY: caller contract.
+        let doc = unsafe { doc.as_mut()? };
+        let focus = doc.session.sel_ends().focus.clone();
+        let c = doc.session.layout().caret(&focus)?;
+        // SAFETY: caller contract.
+        unsafe {
+            *page.as_mut()? = c.page as u32;
+            *x.as_mut()? = c.x;
+            *top.as_mut()? = c.top;
+            *height.as_mut()? = c.height;
+        }
+        Some(0)
+    })
+    .unwrap_or(-1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn blank_doc_types_lays_out_and_renders() {
+        let doc = cobrain_new_blank();
+        assert!(!doc.is_null());
+        let run = |id: &str, p: &str| unsafe {
+            let (id, p) = (CString::new(id).unwrap(), CString::new(p).unwrap());
+            let out = cobrain_run(doc, id.as_ptr(), p.as_ptr());
+            let s = CStr::from_ptr(out).to_string_lossy().into_owned();
+            cobrain_free_string(out);
+            s
+        };
+        assert!(run("text.insert", r#"{"text":"Hello Cobrain"}"#).contains("ok"));
+        assert!(run("no.such.command", "{}").contains("error"));
+        unsafe {
+            assert!(cobrain_page_count(doc) >= 1);
+            let (mut w, mut h) = (0u32, 0u32);
+            let px = cobrain_render_page(doc, 0, 1.0, &mut w, &mut h);
+            assert!(!px.is_null() && w > 0 && h > 0);
+            cobrain_free_buffer(px, (w * h * 4) as usize);
+            let (mut pg, mut x, mut t, mut hh) = (0u32, 0f32, 0f32, 0f32);
+            assert_eq!(cobrain_caret(doc, &mut pg, &mut x, &mut t, &mut hh), 0);
+            assert_eq!(cobrain_click(doc, 0, x, t + 1.0), 0);
+            cobrain_free(doc);
+        }
+    }
+}
