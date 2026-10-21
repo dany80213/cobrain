@@ -194,6 +194,21 @@ pub unsafe extern "C" fn cobrain_run(doc: *mut CobrainDoc, id: *const c_char, pa
     .unwrap_or(std::ptr::null_mut())
 }
 
+/// The engine's command catalog as a JSON array of `{id,label,location,shortcut,params,mutates}`
+/// (`location` is e.g. `Home › Font`). Free with `cobrain_free_string`.
+///
+/// # Safety
+/// `doc` must come from this library.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_commands(doc: *mut CobrainDoc) -> *mut c_char {
+    guard(|| {
+        // SAFETY: caller contract.
+        let doc = unsafe { doc.as_mut()? };
+        Some(to_cstring(doc.session.registry.describe().to_string()))
+    })
+    .unwrap_or(std::ptr::null_mut())
+}
+
 /// Release a string returned by this library.
 ///
 /// # Safety

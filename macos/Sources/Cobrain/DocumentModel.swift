@@ -9,6 +9,7 @@ final class DocumentModel: ObservableObject {
     @Published var fileURL: URL?
     @Published var zoom: CGFloat = 1.0
     @Published var lastError: String?
+    private(set) lazy var catalog: [CommandInfo] = engine.commands()
 
     init() {
         engine = Engine()!

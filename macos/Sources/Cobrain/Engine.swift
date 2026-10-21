@@ -52,6 +52,18 @@ final class Engine {
             provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
     }
 
+    /// The engine's command catalog (id, label, `Tab › Group` location, params…).
+    func commands() -> [CommandInfo] {
+        guard let out = cobrain_commands(handle) else { return [] }
+        defer { cobrain_free_string(out) }
+        let raw = (try? JSONSerialization.jsonObject(with: Data(String(cString: out).utf8))) as? [[String: Any]] ?? []
+        return raw.compactMap { d in
+            guard let id = d["id"] as? String, let label = d["label"] as? String else { return nil }
+            return CommandInfo(id: id, label: label, location: d["location"] as? String ?? "",
+                               shortcut: d["shortcut"] as? String ?? "", params: d["params"] as? String ?? "{}")
+        }
+    }
+
     func click(page: Int, x: CGFloat, y: CGFloat) {
         _ = cobrain_click(handle, UInt32(page), Float(x), Float(y))
     }
@@ -78,4 +90,29 @@ final class Engine {
 struct EngineError: Error, LocalizedError {
     var message: String
     var errorDescription: String? { message }
+}
+
+struct CommandInfo: Identifiable {
+    var id: String
+    var label: String
+    var location: String
+    var shortcut: String
+    var params: String
+
+    var tab: String { location.components(separatedBy: " › ").first ?? "" }
+    var group: String {
+        let parts = location.components(separatedBy: " › ")
+        return parts.count > 1 ? parts[1] : ""
+    }
+
+    /// Parameter names from the engine's description, e.g. `{"size": number, "name"?: string}`.
+    var paramFields: [(name: String, required: Bool, type: String)] {
+        let re = try! NSRegularExpression(pattern: #""(\w+)"(\?)?:\s*([^,}]+)"#)
+        let ns = params as NSString
+        return re.matches(in: params, range: NSRange(location: 0, length: ns.length)).map {
+            (ns.substring(with: $0.range(at: 1)), $0.range(at: 2).location == NSNotFound,
+             ns.substring(with: $0.range(at: 3)).trimmingCharacters(in: .whitespaces))
+        }
+    }
+    var needsInput: Bool { paramFields.contains { $0.required } }
 }

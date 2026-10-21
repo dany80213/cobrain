@@ -4,7 +4,10 @@ struct ContentView: View {
     @ObservedObject var model: DocumentModel
 
     var body: some View {
-        PagesView(model: model)
+        VStack(spacing: 0) {
+            RibbonView(model: model)
+            PagesView(model: model)
+        }
             .navigationTitle(model.title)
             .toolbar {
                 ToolbarItemGroup {
