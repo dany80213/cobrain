@@ -1,4 +1,51 @@
-# WordCraft — instructions for agents
+# Cobrain — instructions for agents
+
+Cobrain is a **native macOS (SwiftUI/AppKit) word processor** built on the WordCraft Rust engine. The goal is a UI **identical to WordCraft's** (ribbon, icons, panes, dialogs, status bar), but written in Swift. The original egui UI (`crates/ui-egui`) is the visual and behavioural reference; it is not shipped in Cobrain.
+
+```
+macos/ (Swift)  ──C ABI (crates/cobrain-ffi)──▶  wordcraft-engine / layout / render / docx …
+```
+
+The rest of this file (below "WordCraft rules") is upstream's and still governs the Rust crates. Everything in `crates/` except `cobrain-ffi` stays in sync with `upstream` (`git fetch upstream && git merge upstream/main`); keep Cobrain changes out of those crates.
+
+## Build, run, look at it
+- `macos/scripts/build-app.sh` → `macos/build/Cobrain.app` (needs Xcode, and Rust: `brew install rustup && rustup default stable`, PATH `/opt/homebrew/opt/rustup/bin`).
+- **Look at the result.** Screen capture is not available to agents; use the app's own snapshot: `COBRAIN_TAB=Insert macos/build/Cobrain.app/Contents/MacOS/Cobrain --snapshot out.png [file.docx]` (1100×760 pt window → PNG), then read the PNG.
+- **Reference screenshots** of the real WordCraft UI: `cargo build --release -p wordcraft-ui-egui --example ui_shot`, then a JSONL script (`{"width":1100,"height":760}`, `{"method":"ui.tab","params":{"tab":"Insert"}}`, `{"shot":"/abs/out.png"}`) → `./target/release/examples/ui_shot script.jsonl`. Compare mine and the reference side by side for every tab/dialog you touch; "identical" is judged on that comparison.
+- FFI test: `cargo test -p cobrain-ffi`.
+
+## How the Swift side is built
+- Every action is an engine command: `DocumentModel.run("<id>", params)` → `cobrain_run`. Ids/params: `wordcraft-cli commands --json` or `Engine.commands()`. Never reimplement document logic in Swift.
+- **Ribbon tabs are generated** from `crates/ui-egui/src/ribbon.rs` by `macos/tools/gen_ribbon.py` → `RibbonSpecData.swift` (do not hand-edit; rerun the script). `SpecRibbon.swift` renders it. Home is hand-written (`HomeRibbon.swift`) because of its combos and gallery.
+- **Icons** are WordCraft's own code-drawn set (`crates/ui-egui/src/icons.rs`), exported to `macos/Resources/icons/*.png` with `crates/ui-egui/examples/icon_sheet.rs` + `macos/tools/gen_icons.py` (needs numpy + pillow in a venv). Never use Microsoft/Adobe artwork; keep upstream's asset rules (below).
+- New engine data the UI needs goes through `crates/cobrain-ffi` (the only crate allowed `unsafe`; keep `catch_unwind` guards, no panics) and `macos/Sources/CCobrain/include/cobrain.h`.
+
+## Status
+Done: open/save (.docx etc.), page rendering, caret by click, typing/deleting/arrows, undo/redo, clipboard via system pasteboard, Home tab (matches reference), generated ribbon for all other tabs with real icons, Navigation (headings), status bar, horizontal ruler, sample document.
+
+## TO DO before starting the rest (in this order)
+1. **Fix the generator's blind spots** (`gen_ribbon.py` skips 37 calls it can't read). Known missing vs. reference: Review › Track Changes, All Markup, Comments ▾, Changes ▾, Compare, Protect ▾, Ink; check every tab against `ref/<Tab>.png` and list what each lacks. Extend the parser (loops, `split(...)`, toggles, `if`) or add hand-written groups.
+2. **Responsive ribbon**: groups collapse to a single dropdown button as the window narrows (`ribbon_fit.rs`: full → compact → collapsed). Port that planning logic; the reference is 1440 pt wide.
+3. **Toggle/enabled state**: pressed state for toggles and greyed-out disabled commands (engine `enabled` reason is not exposed yet: add to `cobrain_commands`/a state call).
+4. **Contextual tabs** (Table Design/Layout, Picture/Shape Format, Chart, SmartArt, Equation, Outlining) appear with the selection; Zotero tab; tab order and the “Customize Ribbon” layout (`wordcraft_engine::ribbon`).
+5. **Dynamic menus**: table grid picker, symbol grid, colour grids (theme colours), shapes gallery, bullet/number libraries, Styles gallery with true previews (`previews.rs`), font combo with recent fonts and previews.
+6. **Dialogs** (all `ui.dialog` commands currently show “not available”): start with Font, Paragraph, Insert Table, Find/Replace (+ Navigation Results tab), Page Setup, Symbol, Hyperlink; list in `crates/ui-egui/src/dialogs*.rs`.
+7. **Chrome**: custom title bar (AutoSave, save/undo/redo, centred title, “Search commands and help”, Comments / Editing / Share buttons), vertical ruler, accurate horizontal ruler with indent markers and tab stops, File › Backstage (`backstage.rs`), dark mode (`theme.rs` tokens).
+8. **Editing**: mouse selection (drag, double/triple click), shift-click, IME/marked text, drag-and-drop, find highlights, spelling squiggles, context menu (`canvas.rs`), keyboard shortcuts from the command registry (`CommandSpec.shortcut`, `Mod`=⌘), Format Painter.
+9. **Documents**: `NSDocument` integration (autosave, versions, recents, multiple windows/tabs, `.docx` UTI/open-with), print/PDF export UI, password-protected files.
+10. **Packaging**: own app icon (current icon is WordCraft's placeholder), bundle id, codesign/notarize, CI (`macos-latest`) running `cargo test -p cobrain-ffi` and the Swift build.
+
+After these, Cobrain-specific features can start (to be defined with the owners: `dany80213`, `thomas-addamo`, `alessandro-guttadauro`).
+
+## Working rules
+- Commit after each arc that builds; message says what and which tab/dialog (`Review: generator handles split()`); keep the Co-Authored-By trailer.
+- Work in small, verified steps: build → snapshot → compare with the reference → commit.
+- Don’t edit upstream crates except to expose something through `cobrain-ffi`; if you must, keep the diff minimal so merges from `upstream` stay clean.
+
+---
+
+# WordCraft rules (upstream)
+
 
 WordCraft is a clean-room, open-source, Rust-native word processor targeting Microsoft Word parity — and going further on speed, openness and agent control. It runs natively on macOS, Windows, Linux and BSD, and on the web via WASM. Siblings with the same conventions: `../photocraft` (Photoshop), `../vectorcraft` (Illustrator), `../filmcraft` (Premiere), `../lightcraft` (Lightroom), `../pdfcraft` (Acrobat), `../effectcraft` (After Effects), `../designcraft` (InDesign). Shared rules and learnings: [`storytold/craftrules`](https://github.com/storytold/craftrules) (`../../craftrules`) — read its `AGENTS.md`.
 

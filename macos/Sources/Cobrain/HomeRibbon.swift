@@ -35,32 +35,54 @@ struct HomeRibbon: View {
         .padding(.horizontal, 8).padding(.vertical, 4)
     }
 
-    private func icon(_ symbol: String, _ id: String, help: String, on: Bool = false, params: [String: Any] = [:]) -> some View {
+    /// A 24-pt icon button with WordCraft's own icon; `on` = pressed/active state.
+    private func icon(_ name: String, _ id: String, help: String, on: Bool = false, params: [String: Any] = [:]) -> some View {
         Button { model.run(id, params) } label: {
-            Image(systemName: symbol).frame(width: 24, height: 22)
-                .background(on ? Color.accentColor.opacity(0.25) : .clear, in: RoundedRectangle(cornerRadius: 4))
+            RibbonIcon(name: name, size: 18).frame(width: 26, height: 24)
+                .background(on ? Color.accentColor.opacity(0.22) : .clear, in: RoundedRectangle(cornerRadius: 4))
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain).help(help)
     }
 
-    private func small(_ title: String, _ symbol: String, _ id: String) -> some View {
+    /// An icon with a drop-down arrow that opens a native menu of `(label, command, params)`.
+    private func dropdown(_ name: String, help: String, _ items: [(String, String, [String: Any])]) -> some View {
+        Button {
+            let menu = NSMenu()
+            for it in items {
+                let mi = NSMenuItem(title: it.0, action: #selector(MenuTarget.fire), keyEquivalent: "")
+                let t = MenuTarget { model.run(it.1, it.2) }
+                mi.target = t; mi.representedObject = t
+                menu.addItem(mi)
+            }
+            menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+        } label: {
+            HStack(spacing: 1) { RibbonIcon(name: name, size: 18); Text("▾").font(.system(size: 8)) }
+                .frame(height: 24).padding(.horizontal, 3).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).help(help)
+    }
+
+    private func small(_ title: String, _ name: String, _ id: String) -> some View {
         Button { model.run(id) } label: {
-            HStack(spacing: 5) { Image(systemName: symbol).frame(width: 16); Text(title).font(.system(size: 12)) }
-                .frame(width: 80, alignment: .leading).contentShape(Rectangle())
+            HStack(spacing: 6) { RibbonIcon(name: name, size: 18); Text(title).font(.system(size: 12)) }
+                .frame(width: 76, alignment: .leading).padding(.vertical, 2).contentShape(Rectangle())
         }.buttonStyle(.plain)
     }
+
+    private var sepV: some View { Divider().frame(height: 16).padding(.horizontal, 2) }
 
     private var clipboard: some View {
         group("Clipboard") {
             HStack(alignment: .top, spacing: 6) {
                 Button { model.paste() } label: {
-                    VStack(spacing: 2) { Image(systemName: "doc.on.clipboard").font(.system(size: 28)); Text("Paste ▾").font(.system(size: 12)) }
+                    VStack(spacing: 3) { RibbonIcon(name: "paste", size: 32); Text("Paste ▾").font(.system(size: 12)) }
                         .frame(width: 52).contentShape(Rectangle())
-                }.buttonStyle(.plain)
-                VStack(alignment: .leading, spacing: 4) {
-                    small("Cut", "scissors", "edit.cut")
-                    small("Copy", "doc.on.doc", "edit.copy")
-                    small("Format", "paintbrush", "edit.formatPainter")
+                }.buttonStyle(.plain).help("Paste (⌘V)")
+                VStack(alignment: .leading, spacing: 2) {
+                    small("Cut", "cut", "edit.cut")
+                    small("Copy", "copy", "edit.copy")
+                    small("Format", "painter", "edit.formatPainter")
                 }
             }
         }
@@ -69,30 +91,35 @@ struct HomeRibbon: View {
     private var font: some View {
         group("Font") {
             VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 4) {
+                HStack(spacing: 3) {
                     TextField("Font", text: $fontName).textFieldStyle(.roundedBorder).frame(width: 150)
                         .onSubmit { model.run("format.font", ["name": fontName]) }
                     TextField("Size", text: $fontSize).textFieldStyle(.roundedBorder).frame(width: 46)
                         .onSubmit { if let v = Double(fontSize) { model.run("format.size", ["size": v]) } }
-                    icon("textformat.size.larger", "format.growFont", help: "Increase Font Size")
-                    icon("textformat.size.smaller", "format.shrinkFont", help: "Decrease Font Size")
-                    icon("eraser", "format.clear", help: "Clear All Formatting")
+                    icon("grow", "format.growFont", help: "Increase Font Size")
+                    icon("shrink", "format.shrinkFont", help: "Decrease Font Size")
+                    dropdown("case", help: "Change Case", [("Sentence case.", "format.changeCase", ["mode": "sentence"]),
+                                                          ("lowercase", "format.changeCase", ["mode": "lower"]),
+                                                          ("UPPERCASE", "format.changeCase", ["mode": "upper"]),
+                                                          ("Capitalize Each Word", "format.changeCase", ["mode": "title"]),
+                                                          ("tOGGLE cASE", "format.changeCase", ["mode": "toggle"])])
+                    icon("clear", "format.clear", help: "Clear All Formatting")
+                    icon("phonetic", "format.phonetic", help: "Phonetic Guide")
                 }
-                HStack(spacing: 2) {
+                HStack(spacing: 1) {
                     icon("bold", "format.bold", help: "Bold (⌘B)", on: model.isOn("bold"))
                     icon("italic", "format.italic", help: "Italic (⌘I)", on: model.isOn("italic"))
                     icon("underline", "format.underline", help: "Underline (⌘U)", on: model.isOn("underline"))
-                    icon("strikethrough", "format.strikethrough", help: "Strikethrough", on: model.isOn("strike"))
-                    icon("textformat.subscript", "format.subscript", help: "Subscript", on: model.isOn("subscript"))
-                    icon("textformat.superscript", "format.superscript", help: "Superscript", on: model.isOn("superscript"))
-                    Divider().frame(height: 16)
-                    icon("highlighter", "format.highlight", help: "Text Highlight Color", params: ["color": "yellow"])
-                    Menu {
-                        ForEach([("Black", "000000"), ("Red", "C00000"), ("Blue", "1F4E9E"), ("Green", "2E7D32"), ("Automatic", "auto")], id: \.1) { n, c in
-                            Button(n) { model.run("format.color", ["color": c]) }
-                        }
-                    } label: { Image(systemName: "a.square").foregroundStyle(.red) }
-                        .menuStyle(.borderlessButton).frame(width: 34).help("Font Color")
+                    icon("strike", "format.strikethrough", help: "Strikethrough", on: model.isOn("strike"))
+                    icon("subscript", "format.subscript", help: "Subscript", on: model.isOn("subscript"))
+                    icon("superscript", "format.superscript", help: "Superscript", on: model.isOn("superscript"))
+                    icon("charborder", "format.border", help: "Character Border", on: model.isOn("border"))
+                    icon("enclose", "format.enclose", help: "Enclose Characters")
+                    sepV
+                    icon("highlight", "format.highlight", help: "Text Highlight Color", params: ["color": "yellow"])
+                    dropdown("fontcolor", help: "Font Color", [("Automatic", "format.color", ["color": "auto"]), ("Black", "format.color", ["color": "000000"]),
+                                                              ("Red", "format.color", ["color": "C00000"]), ("Blue", "format.color", ["color": "1F4E9E"]),
+                                                              ("Green", "format.color", ["color": "2E7D32"])])
                 }
             }
         }
@@ -101,28 +128,31 @@ struct HomeRibbon: View {
     private var paragraph: some View {
         group("Paragraph") {
             VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 2) {
-                    icon("list.bullet", "para.bullets", help: "Bullets")
-                    icon("list.number", "para.numbering", help: "Numbering")
-                    icon("list.bullet.indent", "para.multilevel", help: "Multilevel List")
-                    Divider().frame(height: 16)
-                    icon("decrease.indent", "para.outdent", help: "Decrease Indent")
-                    icon("increase.indent", "para.indent", help: "Increase Indent")
-                    icon("textformat.abc", "para.sort", help: "Sort")
-                    icon("paragraphsign", "view.marks", help: "Show/Hide ¶")
+                HStack(spacing: 1) {
+                    icon("bullets", "para.bullets", help: "Bullets")
+                    icon("numbering", "para.numbering", help: "Numbering")
+                    icon("multilevel", "para.multilevel", help: "Multilevel List")
+                    sepV
+                    icon("outdent", "para.outdent", help: "Decrease Indent")
+                    icon("indent", "para.indent", help: "Increase Indent")
+                    sepV
+                    icon("sort", "para.sort", help: "Sort")
+                    icon("pilcrow", "view.marks", help: "Show/Hide ¶")
                 }
-                HStack(spacing: 2) {
-                    icon("text.alignleft", "para.alignLeft", help: "Align Left")
-                    icon("text.aligncenter", "para.alignCenter", help: "Center")
-                    icon("text.alignright", "para.alignRight", help: "Align Right")
-                    icon("text.justify", "para.justify", help: "Justify")
-                    Divider().frame(height: 16)
-                    Menu {
-                        Button("Single") { model.run("para.single") }
-                        Button("1.5") { model.run("para.oneAndHalf") }
-                        Button("Double") { model.run("para.double") }
-                    } label: { Image(systemName: "arrow.up.and.down.text.horizontal") }
-                        .menuStyle(.borderlessButton).frame(width: 34).help("Line and Paragraph Spacing")
+                HStack(spacing: 1) {
+                    icon("alignLeft", "para.alignLeft", help: "Align Left")
+                    icon("alignCenter", "para.alignCenter", help: "Center")
+                    icon("alignRight", "para.alignRight", help: "Align Right")
+                    icon("justify", "para.justify", help: "Justify")
+                    sepV
+                    icon("textLtr", "para.ltr", help: "Left-to-Right Text Direction")
+                    icon("textRtl", "para.rtl", help: "Right-to-Left Text Direction")
+                    sepV
+                    dropdown("lineSpacing", help: "Line and Paragraph Spacing", [("1.0", "para.single", [:]), ("1.5", "para.oneAndHalf", [:]), ("2.0", "para.double", [:]),
+                                                                              ("Add Space Before Paragraph", "para.addSpaceBefore", [:]),
+                                                                              ("Remove Space After Paragraph", "para.removeSpaceAfter", [:])])
+                    icon("shading", "para.shading", help: "Shading", params: ["color": "FFF2CC"])
+                    icon("borders", "para.borders", help: "Borders", params: ["kind": "bottom"])
                 }
             }
         }
@@ -151,13 +181,26 @@ struct HomeRibbon: View {
     }
 
     private var editing: some View {
-        group("Editing") {
-            VStack(alignment: .leading, spacing: 4) {
-                small("Find", "magnifyingglass", "edit.findReplace")
-                small("Replace", "arrow.left.arrow.right", "edit.findReplace")
-                small("Select", "cursorarrow", "select.all")
+        HStack(alignment: .top, spacing: 0) {
+            group("Editing") {
+                VStack(alignment: .leading, spacing: 2) {
+                    small("Find", "find", "edit.findReplace")
+                    small("Replace", "replace", "edit.findReplace")
+                    small("Select", "select", "select.all")
+                }
             }
+            sep
+            group("Voice") { bigButton("Dictate", "dictate", "tools.dictate") }
+            sep
+            group("Editor") { bigButton("Editor", "editor", "review.spelling") }
         }
+    }
+
+    private func bigButton(_ title: String, _ name: String, _ id: String) -> some View {
+        Button { model.run(id) } label: {
+            VStack(spacing: 3) { RibbonIcon(name: name, size: 32); Text(title).font(.system(size: 12)) }
+                .frame(minWidth: 50).contentShape(Rectangle())
+        }.buttonStyle(.plain)
     }
 
     static func preview(_ id: String) -> Font {
