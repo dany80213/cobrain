@@ -15,6 +15,9 @@ final class DocumentModel: ObservableObject {
     @Published private(set) var styles: [(id: String, name: String)] = []
     @Published private(set) var headings: [Engine.Heading] = []
     @Published private(set) var wordCount = 0
+    @Published private(set) var caretPage = 0
+    @Published private(set) var pageWidth: CGFloat = 612
+    @Published var navigationVisible = true
 
     init() {
         engine = Engine(sample: true)!
@@ -29,6 +32,9 @@ final class DocumentModel: ObservableObject {
                 .compactMap { d in (d["id"] as? String).flatMap { id in (d["name"] as? String).map { (id, $0) } } }
         }
         headings = engine.outline()
+        if case .success(let i) = engine.run("file.info"), let d = i as? [String: Any] { wordCount = d["words"] as? Int ?? 0 }
+        if let c = engine.caret { caretPage = c.page }
+        if let p = engine.pageSize(0) { pageWidth = p.width }
     }
 
     func isOn(_ key: String) -> Bool { (format[key] as? Bool) == true }

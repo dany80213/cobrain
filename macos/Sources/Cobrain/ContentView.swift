@@ -7,33 +7,28 @@ struct ContentView: View {
         VStack(spacing: 0) {
             RibbonView(model: model)
             HStack(spacing: 0) {
-                NavigationPane(model: model)
-                Divider()
-                PagesView(model: model)
+                if model.navigationVisible { NavigationPane(model: model); Divider() }
+                VStack(spacing: 0) {
+                    RulerView(model: model)
+                    PagesView(model: model)
+                }
             }
         }
             .navigationTitle(model.title)
+            .safeAreaInset(edge: .bottom, spacing: 0) { StatusBar(model: model) }
             .toolbar {
-                ToolbarItemGroup {
-                    Button { model.open() } label: { Label("Open", systemImage: "folder") }
+                ToolbarItemGroup(placement: .navigation) {
                     Button { model.save() } label: { Label("Save", systemImage: "square.and.arrow.down") }
+                    Button { model.run("edit.undo") } label: { Label("Undo", systemImage: "arrow.uturn.backward") }
+                    Button { model.run("edit.redo") } label: { Label("Redo", systemImage: "arrow.uturn.forward") }
                 }
-                ToolbarItemGroup {
-                    Button { model.run("format.bold") } label: { Label("Bold", systemImage: "bold") }
-                    Button { model.run("format.italic") } label: { Label("Italic", systemImage: "italic") }
-                    Button { model.run("format.underline") } label: { Label("Underline", systemImage: "underline") }
+                ToolbarItem(placement: .principal) {
+                    Text("\(model.title) — \(model.fileURL == nil ? "Not saved" : "Saved")").font(.headline)
                 }
-            }
-            .safeAreaInset(edge: .bottom) {
-                HStack {
-                    Text("Page count: \(model.engine.pageCount)")
-                    Spacer()
-                    if let e = model.lastError { Text(e).foregroundStyle(.red) }
-                    Text("Engine \(Engine.version)").foregroundStyle(.secondary)
+                ToolbarItemGroup(placement: .primaryAction) {
+                    Button { model.open() } label: { Label("Open", systemImage: "folder") }
+                    Button { model.navigationVisible.toggle() } label: { Label("Navigation", systemImage: "sidebar.left") }
                 }
-                .font(.caption)
-                .padding(.horizontal, 10).padding(.vertical, 4)
-                .background(.bar)
             }
     }
 }
