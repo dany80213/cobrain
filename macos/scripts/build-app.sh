@@ -11,6 +11,7 @@ APP=build/Cobrain.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/Cobrain "$APP/Contents/MacOS/Cobrain"
+cp -R Resources/icons "$APP/Contents/Resources/icons"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp ../assets/app-icon/wordcraft.icns "$APP/Contents/Resources/Cobrain.icns" # placeholder icon until Cobrain has its own
 codesign --force --sign - "$APP" >/dev/null

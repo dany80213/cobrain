@@ -3,7 +3,7 @@ import SwiftUI
 /// Word-style ribbon generated from the engine's command catalog (`Tab › Group` locations).
 struct RibbonView: View {
     @ObservedObject var model: DocumentModel
-    @State private var tab = "Home"
+    @State private var tab = ProcessInfo.processInfo.environment["COBRAIN_TAB"] ?? "Home"
     @State private var pending: CommandInfo?
 
     static let tabs = ["File", "Home", "Insert", "Draw", "Design", "Layout", "References", "Mailings", "Review", "View", "Developer", "Help"]
@@ -36,6 +36,8 @@ struct RibbonView: View {
             Group {
                 if tab == "Home" {
                     HomeRibbon(model: model) { pending = $0 }
+                } else if let spec = SpecNode.tabs[tab], !spec.isEmpty {
+                    SpecRibbon(groups: spec, model: model) { tab = $0 }
                 } else {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(alignment: .top, spacing: 0) {
@@ -48,7 +50,7 @@ struct RibbonView: View {
                     }
                 }
             }
-            .frame(height: 112)
+            .frame(height: 100).clipped()
             .background(Color(nsColor: .controlBackgroundColor))
             Divider()
         }
