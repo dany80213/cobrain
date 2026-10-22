@@ -272,6 +272,10 @@ pub unsafe extern "C" fn cobrain_toggle_states(doc: *mut CobrainDoc) -> *mut c_c
         let map = serde_json::json!({
             "review.trackChanges": s.doc.settings.track_changes,
             "view.marks": s.view.marks,
+            "view.ruler": s.view.ruler,
+            "view.gridlines": s.view.gridlines,
+            "view.navigationPane": s.view.nav_pane,
+            "view.hideWhiteSpace": s.view.hide_white_space,
         });
         Some(to_cstring(map.to_string()))
     })
@@ -467,6 +471,46 @@ pub unsafe extern "C" fn cobrain_selection_rects(doc: *mut CobrainDoc) -> *mut c
             find.extend(layout.selection_rects(&doc.session.doc, a, b, hint).into_iter().map(row));
         }
         Some(to_cstring(serde_json::json!({ "selection": sel, "find": find }).to_string()))
+    })
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// State for an inline ribbon widget (`paraFields`, `tableLook`) as JSON; `{}` when it does not
+/// apply (no table at the caret…). Free with `cobrain_free_string`.
+///
+/// # Safety
+/// `doc` must come from this library; `kind` a valid NUL-terminated UTF-8 string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_widget_state(doc: *mut CobrainDoc, kind: *const c_char) -> *mut c_char {
+    guard(|| {
+        // SAFETY: caller contract.
+        let (doc, kind) = unsafe { (doc.as_mut()?, from_cstr(kind)?) };
+        let s = &doc.session;
+        let focus = s.sel.focus.clone();
+        let out = match kind {
+            "paraFields" => s
+                .doc
+                .para_at(&focus)
+                .map(|p| {
+                    let r = s.doc.styles.resolve_para(&p.props);
+                    serde_json::json!({ "left": r.indent_left, "right": r.indent_right, "before": r.space_before, "after": r.space_after })
+                })
+                .unwrap_or_default(),
+            "tableLook" => focus
+                .path
+                .cell()
+                .and_then(|(tp, _, _)| s.doc.table(focus.story, &tp))
+                .map(|t| {
+                    let l = &t.props.look;
+                    serde_json::json!({
+                        "headerRow": l.header_row, "firstColumn": l.first_column, "totalRow": l.total_row,
+                        "lastColumn": l.last_column, "bandedRows": l.banded_rows, "bandedColumns": l.banded_columns
+                    })
+                })
+                .unwrap_or_default(),
+            _ => serde_json::Value::Null,
+        };
+        Some(to_cstring(if out.is_null() { "{}".to_string() } else { out.to_string() }))
     })
     .unwrap_or(std::ptr::null_mut())
 }

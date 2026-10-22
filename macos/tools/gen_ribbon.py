@@ -30,6 +30,18 @@ def fn_body(name):
         i += 1
     return src[m.end():i - 1]
 
+def local_fn_body(name):
+    m = re.search(r"\nfn %s\([^)]*\) \{" % re.escape(name), src)
+    if not m: return None
+    i = m.end(); depth = 1
+    while depth:
+        c = src[i]
+        if c == '"': i = skip_str(src, i); continue
+        if c == '{': depth += 1
+        elif c == '}': depth -= 1
+        i += 1
+    return src[m.end():i - 1]
+
 def skip_str(s, i):
     i += 1
     while s[i] != '"':
@@ -89,21 +101,84 @@ def params(a):
     except Exception:
         return "{}"
 
+def expand_loops(body):
+    """Unrolls `for (a, b) in [(..), (..)] { … }` over literal arrays, substituting the loop variables
+    (also inside `format!("… {a} …")`), so the call parser sees plain `mi(ui, app, "Label", …)`."""
+    out, i = "", 0
+    pat = re.compile(r"(?<![\w])for\s+(\([^)]*\)|\w+)\s+in\s+\[")
+    while True:
+        m = pat.search(body, i)
+        if not m:
+            out += body[i:]; break
+        out += body[i:m.start()]
+        arr_start = m.end() - 1
+        arr_end = balanced(body, arr_start, "[", "]")
+        rest = body[arr_end:]
+        mb = re.match(r"\s*\{", rest)
+        if not mb:
+            out += body[m.start():arr_end]; i = arr_end; continue
+        bstart = arr_end + mb.end() - 1
+        bend = balanced(body, bstart, "{", "}")
+        inner = body[bstart + 1:bend - 1]
+        vars_ = [v.strip() for v in m.group(1).strip("()").split(",")]
+        elems = split_args(body[arr_start + 1:arr_end - 1])
+        expanded = ""
+        ok = True
+        for e in elems:
+            vals = [e] if not e.startswith("(") else split_args(e[1:-1])
+            if len(vals) != len(vars_): ok = False; break
+            copy = inner
+            for v, val in zip(vars_, vals):
+                plain = val.strip().strip('"')
+                copy = re.sub(r"\{%s(:[^}]*)?\}" % re.escape(v), lambda mm: plain.split(".")[0] if mm.group(1) else plain, copy)
+                copy = re.sub(r"(?<![\w\"])%s(?![\w\"])" % re.escape(v), lambda mm: val.strip(), copy)
+            copy = re.sub(r"&format!\((\"(?:[^\"\\]|\\.)*\")\)", r"\1", copy)
+            expanded += copy + "\n"
+        if not ok:
+            out += body[m.start():bend]
+        else:
+            out += expanded
+        i = bend
+    return out
+
+LOCAL_FNS = sorted(set(re.findall(r"\nfn (\w+)\(ui: &mut Ui, app: &mut WordApp", src)) - {"mi_icon", "mi_text", "mi_check", "format_painter_button", "gallery_pen", "shape_effects_menu"})
+
+# Menus whose labels are computed at runtime: written out by hand (same entries as the Rust code).
+OVERRIDES = {
+    "margins_items": '''
+        mi(ui, app, "Normal  1\\" all", "layout.margins", json!({"preset": "normal"}));
+        mi(ui, app, "Narrow  0.5\\" all", "layout.margins", json!({"preset": "narrow"}));
+        mi(ui, app, "Moderate", "layout.margins", json!({"preset": "moderate"}));
+        mi(ui, app, "Wide", "layout.margins", json!({"preset": "wide"}));
+        mi(ui, app, "Mirrored", "layout.margins", json!({"preset": "mirrored"}));
+        mi(ui, app, "Office 2003 Default", "layout.margins", json!({"preset": "office2003"}));
+        mi(ui, app, "Custom Margins…", "ui.dialog", json!({"name": "pageSetup"}));
+    ''',
+}
+
 CALLS = ["group", "stack", "big_toggle", "big", "small", "menu_button", "mi_icon", "mi_check", "mi", "split"]
 skipped = [0]
 skipped_log = []
 
 def closure_body(a):
+    if "citations::STYLES" in a:
+        return "".join('mi_check(ui, app, "%s", false, "references.citationStyle", json!({"style": "%s"}));\n' % (n, n) for n in ["APA", "MLA", "Chicago", "IEEE"])
+    a0 = a.strip()
+    if re.fullmatch(r"\w+", a0) and local_fn_body(a0) is not None:  # `menu_button(…, margins_items)`
+        return OVERRIDES.get(a0) or local_fn_body(a0)
     i = a.index("{") if "{" in a else None
     if i is None: return ""  # fn path closure
     return a[i + 1: balanced(a, i, "{", "}") - 1]
 
 def parse(body):
+    body = expand_loops(body)
     items = []
     i = 0
     pat = re.compile(r"(?<![\w.:])(%s)\(|ui\.separator\(\)|crate::dialogs::table_grid_picker\(ui, app\)"
                      r"|crate::colors::menu\(ui, app, [^;]*?Target::cmd\(\"([^\"]+)\"\)"
-                     r"|egui::Grid::new\(\"syms\"\)|crate::wordart_menus::style_gallery\(ui, app, \"([^\"]+)\"\)" % "|".join(CALLS))
+                     r"|ui\.checkbox\(&mut \w+, tl!\(\"([^\"]+)\"\)\)\.changed\(\) \{\s*let _ = app\.run\(\"([^\"]+)\""
+                     r"|crate::equation_tab::insert_button\(ui, app\)"
+                     r"|egui::Grid::new\(\"(?:syms|layout_para|look)\"\)|(?<![\w.:])(?:%s)\(ui, app[^)]*\)|cell_size_boxes\(ui, app\)|crate::wordart_menus::style_gallery\(ui, app, \"([^\"]+)\"\)" % ("|".join(CALLS), "|".join(LOCAL_FNS)))
     while True:
         m = pat.search(body, i)
         if not m: break
@@ -114,8 +189,28 @@ def parse(body):
             items.append({"t": "widget", "kind": "tableGrid"}); i = m.end(); continue
         if g0.startswith("crate::colors::menu"):
             items.append({"t": "widget", "kind": "colors", "cmd": m.group(2)}); i = m.end(); continue
+        if g0.startswith("crate::equation_tab::insert_button"):
+            items.append({"t": "menu", "big": True, "icon": "equation", "label": "Equation", "tip": "Equation", "cmd": "insert.equation",
+                          "items": [{"t": "item", "label": "Insert New Equation", "cmd": "insert.equation", "params": "{}"}]})
+            i = m.end(); continue
+        if g0.startswith("ui.checkbox"):
+            mc = re.match(r'ui\.checkbox\(&mut \w+, tl!\("([^"]+)"\)\)\.changed\(\) \{\s*let _ = app\.run\("([^"]+)"', g0)
+            items.append({"t": "check", "label": mc.group(1), "cmd": mc.group(2)}); i = m.end(); continue
         if g0.startswith("egui::Grid::new"):
-            items.append({"t": "widget", "kind": "symbols"}); i = m.end(); continue
+            kind = {"syms": "symbols", "layout_para": "paraFields", "look": "tableLook"}[re.search(r'"(\w+)"', g0).group(1)]
+            items.append({"t": "widget", "kind": kind}); i = m.end(); continue
+        if g0.startswith("cell_size_boxes"):
+            items.append({"t": "widget", "kind": "cellSize"}); i = m.end(); continue
+        mfn = re.match(r"(\w+)\(ui, app", g0)
+        if mfn and mfn.group(1) in LOCAL_FNS:
+            j2 = body.index("(", m.start()); end2 = balanced(body, j2, "(", ")")
+            fargs = split_args(body[j2 + 1:end2 - 1])
+            fb = OVERRIDES.get(mfn.group(1)) or local_fn_body(mfn.group(1))
+            if fb is not None:
+                # `label: Option<&str>` parameters: pass the call's argument down.
+                if len(fargs) > 2: fb = re.sub(r"\blabel\b", fargs[2], fb)
+                items.extend(parse(fb))
+            i = end2; continue
         if g0.startswith("crate::wordart_menus::style_gallery"):
             items.append({"t": "widget", "kind": "wordArt", "cmd": m.group(3)}); i = m.end(); continue
         name = m.group(1)
@@ -139,11 +234,13 @@ def parse(body):
             elif name == "small":
                 it = {"t": "small", "icon": lit(args[2]) or "", "label": lit(args[3]) or None, "tip": lit(args[4]) or "",
                       "cmd": lit(args[5]) or "", "params": params(args[6])}
-                if it["label"] is False: skipped[0] += 1; continue
+                if it["label"] is False: skipped[0] += 1; skipped_log.append((name, args[3][:60])); continue
                 items.append(it)
             elif name == "menu_button":
                 lab = lit(args[3]); tip = lit(args[4])
-                if lab is False or tip is False: skipped[0] += 1; continue
+                if lab is False and tip == "Citation Style": lab = "Style: APA"
+                if lab is False and "show_markup" in args[3]: lab = "All Markup"
+                if lab is False or tip is False: skipped[0] += 1; skipped_log.append((name, (args[3] + " | " + args[4])[:80])); continue
                 items.append({"t": "menu", "icon": lit(args[2]) or "", "label": lab, "tip": tip,
                               "big": args[5].strip() == "true", "cmd": lit(args[6]) or "",
                               "items": parse(closure_body(args[7]))})
@@ -154,17 +251,22 @@ def parse(body):
                               "params": params(args[5]), "items": parse(closure_body(args[-1]))})
             elif name in ("mi", "mi_check"):
                 lab = lit(args[2])
-                if lab is False: skipped[0] += 1; continue
+                if lab is False: skipped[0] += 1; skipped_log.append((name, args[2][:60])); continue
                 cmd = lit(args[-2] if name == "mi_check" else args[3])
                 items.append({"t": "item", "label": lab, "cmd": cmd or "", "params": params(args[-1])})
             elif name == "mi_icon":
                 lab = lit(args[3])
-                if lab is False: skipped[0] += 1; continue
-                items.append({"t": "item", "icon": lit(args[2]) or "", "label": lab, "cmd": lit(args[4]) or "", "params": params(args[5])})
+                if lab is False: skipped[0] += 1; skipped_log.append((name, args[3][:60])); continue
+                icon = lit(args[2]) or ""
+                if "{" in icon or icon == "":
+                    icon = {"Straight Connector": "shape.straightConnector", "Straight Arrow Connector": "shape.straightArrowConnector",
+                            "Elbow Connector": "shape.elbowConnector", "Elbow Arrow Connector": "shape.elbowArrowConnector",
+                            "Curved Connector": "shape.curvedConnector", "Curved Arrow Connector": "shape.curvedArrowConnector"}.get(lab, "")
+                items.append({"t": "item", "icon": icon, "label": lab, "cmd": lit(args[4]) or "", "params": params(args[5])})
             else:
                 skipped[0] += 1; skipped_log.append((name, 'unhandled'))
         except Exception as e:
-            skipped[0] += 1; skipped_log.append((name, 'EXC ' + repr(e)))
+            skipped[0] += 1; skipped_log.append((name, 'EXC ' + repr(e) + ' ' + str(args)[:150]))
     return items
 
 spec = {}

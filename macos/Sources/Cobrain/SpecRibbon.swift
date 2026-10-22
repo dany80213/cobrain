@@ -163,7 +163,7 @@ struct ResponsiveRow: View {
         Button { popUp(c.menu) } label: {
             VStack(spacing: 3) {
                 Image(systemName: "ellipsis").font(.system(size: 18, weight: .bold)).frame(width: 32, height: 32)
-                Text(c.title + " ▾").font(.system(size: 12)).fixedSize()
+                Text(c.title + " ▾").font(.system(size: 11.5)).fixedSize()
             }
             .frame(width: collapsedWidth - 16).contentShape(Rectangle())
         }
@@ -179,7 +179,7 @@ struct SpecRibbon: View {
     var body: some View {
         ResponsiveRow(columns: groups.map { g in
             RibbonColumn(id: g.title ?? "", title: g.title ?? "",
-                         content: AnyView(HStack(alignment: .top, spacing: 4) { ForEach(g.items ?? []) { nodeView($0) } }),
+                         content: AnyView(HStack(alignment: .top, spacing: 2) { ForEach(g.items ?? []) { nodeView($0) } }),
                          menu: SpecNode.menu(of: g))
         }, popUp: popUp)
     }
@@ -206,10 +206,15 @@ struct SpecRibbon: View {
         case "stack":
             VStack(alignment: .leading, spacing: 1) { ForEach(n.items ?? []) { nodeView($0) } }
         case "split": splitButton(n)
+        case "widget": InlineWidget(kind: n.kind ?? "", model: model)
+        case "check":
+            Toggle(n.label ?? "", isOn: Binding(get: { model.isPressed(n.cmd ?? "") }, set: { on in model.run(n.cmd ?? "", ["value": on]) }))
+                .toggleStyle(.checkbox).font(.system(size: 11.5)).fixedSize()
         case "menu":
             Button { popUp(n) } label: {
                 if n.big == true { bigLabel(n, arrow: true) } else { smallLabel(n, arrow: true) }
             }.buttonStyle(.plain).help(n.tip ?? n.label ?? "")
+                .disabled(!model.isEnabled(n.cmd ?? "")).opacity(model.isEnabled(n.cmd ?? "") ? 1 : 0.4)
         default: EmptyView()
         }
     }
@@ -267,19 +272,20 @@ struct SpecRibbon: View {
     private func bigLabel(_ n: SpecNode, arrow: Bool) -> some View {
         VStack(spacing: 3) {
             RibbonIcon(name: n.icon ?? "", size: 32)
-            Text((n.label ?? "") + (arrow ? " ▾" : ""))
-                .font(.system(size: 12)).multilineTextAlignment(.center).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+            (Text(n.label ?? "") + (arrow ? Text(" ") + Text(Image(systemName: "arrowtriangle.down.fill")).font(.system(size: 6)) : Text("")))
+                .font(.system(size: 11.5)).multilineTextAlignment(.center).lineLimit(2).fixedSize(horizontal: false, vertical: true)
         }
-        .frame(minWidth: 46).fixedSize().padding(.horizontal, 4).contentShape(Rectangle())
+        .frame(minWidth: 40).fixedSize().padding(.horizontal, 2).contentShape(Rectangle())
     }
 
     private func smallLabel(_ n: SpecNode, arrow: Bool) -> some View {
         HStack(spacing: 5) {
             RibbonIcon(name: n.icon ?? "", size: 18)
-            if let l = n.label { Text(l + (arrow ? " ▾" : "")).font(.system(size: 12)).fixedSize() }
-            else if arrow { Text("▾").font(.system(size: 9)) }
+            if let l = n.label {
+                (Text(l) + (arrow ? Text(" ") + Text(Image(systemName: "arrowtriangle.down.fill")).font(.system(size: 6)) : Text(""))).font(.system(size: 11.5)).fixedSize()
+            } else if arrow { Image(systemName: "arrowtriangle.down.fill").font(.system(size: 6)) }
         }
-        .padding(.horizontal, 4).padding(.vertical, 2).contentShape(Rectangle())
+        .padding(.horizontal, 3).padding(.vertical, 2).contentShape(Rectangle())
     }
 
     /// Icon button that runs the command, with a small arrow that opens its menu.
@@ -316,5 +322,95 @@ private struct DarkIcon: ViewModifier {
     let dark: Bool
     func body(content: Content) -> some View {
         if dark { content.colorInvert().hueRotation(.degrees(180)) } else { content }
+    }
+}
+
+/// Number fields and check boxes that sit directly in a ribbon group.
+struct InlineWidget: View {
+    let kind: String
+    @ObservedObject var model: DocumentModel
+
+    var body: some View {
+        // Re-read the engine state after each change (`revision`).
+        let state = model.engine.widgetState(kind)
+        let _ = model.revision
+        switch kind {
+        case "paraFields": paraFields(state)
+        case "tableLook": tableLook(state)
+        case "cellSize": cellSize
+        default: EmptyView()
+        }
+    }
+
+    private func num(_ s: [String: Any], _ k: String) -> Double { (s[k] as? Double) ?? Double((s[k] as? Int) ?? 0) }
+
+    private func field(_ label: String, _ value: Double, unit: String, _ commit: @escaping (Double) -> Void) -> some View {
+        HStack(spacing: 4) {
+            Text(label).font(.system(size: 11)).frame(width: 44, alignment: .trailing)
+            NumberBox(value: value, unit: unit, commit: commit).disabled(false)
+        }
+    }
+
+    private func paraFields(_ s: [String: Any]) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 14) {
+                Text("Indent").font(.system(size: 10, weight: .semibold)).frame(width: 110, alignment: .leading)
+                Text("Spacing").font(.system(size: 10, weight: .semibold))
+            }
+            HStack(spacing: 8) {
+                field("Left:", num(s, "left") / 72, unit: "\"") { model.run("para.indents", ["left": $0 * 72]) }
+                field("Before:", num(s, "before"), unit: " pt") { model.run("para.spacing", ["before": $0]) }
+            }
+            HStack(spacing: 8) {
+                field("Right:", num(s, "right") / 72, unit: "\"") { model.run("para.indents", ["right": $0 * 72]) }
+                field("After:", num(s, "after"), unit: " pt") { model.run("para.spacing", ["after": $0]) }
+            }
+        }
+        .opacity(s.isEmpty ? 0.4 : 1).disabled(s.isEmpty)
+    }
+
+    private func tableLook(_ s: [String: Any]) -> some View {
+        let rows: [[(String, String)]] = [[("Header Row", "headerRow"), ("First Column", "firstColumn")],
+                                          [("Total Row", "totalRow"), ("Last Column", "lastColumn")],
+                                          [("Banded Rows", "bandedRows"), ("Banded Columns", "bandedColumns")]]
+        return VStack(alignment: .leading, spacing: 2) {
+            ForEach(rows.indices, id: \.self) { r in
+                HStack(spacing: 14) {
+                    ForEach(rows[r], id: \.1) { item in
+                        Toggle(item.0, isOn: Binding(get: { (s[item.1] as? Bool) ?? false }, set: { model.run("table.look", [item.1: $0]) }))
+                            .toggleStyle(.checkbox).font(.system(size: 11))
+                    }
+                }
+            }
+        }
+    }
+
+    private var cellSize: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            field("Height:", 0, unit: "\"") { model.run("table.rowHeight", ["height": $0 * 72]) }
+            field("Width:", 0, unit: "\"") { model.run("table.columnWidth", ["width": $0 * 72]) }
+        }
+    }
+}
+
+/// A small numeric text field that commits on Return.
+struct NumberBox: View {
+    let value: Double
+    let unit: String
+    let commit: (Double) -> Void
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TextField("", text: $text)
+            .textFieldStyle(.roundedBorder).font(.system(size: 11)).frame(width: 62).focused($focused)
+            .onSubmit { if let v = Double(text.replacingOccurrences(of: unit, with: "").trimmingCharacters(in: .whitespaces)) { commit(v) } }
+            .onAppear { text = format(value) }
+            .onChange(of: value) { _, v in if !focused { text = format(v) } }
+    }
+
+    private func format(_ v: Double) -> String {
+        let r = (v * 100).rounded() / 100
+        return (r == r.rounded() ? String(format: unit == "\"" ? "%.2f" : "%.0f", r) : "\(r)") + unit
     }
 }

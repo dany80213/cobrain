@@ -146,6 +146,12 @@ final class Engine {
         return (d["selection"] as? [[Double]] ?? [], d["find"] as? [[Double]] ?? [])
     }
 
+    func widgetState(_ kind: String) -> [String: Any] {
+        guard let out = cobrain_widget_state(handle, kind) else { return [:] }
+        defer { cobrain_free_string(out) }
+        return (try? JSONSerialization.jsonObject(with: Data(String(cString: out).utf8))) as? [String: Any] ?? [:]
+    }
+
     func click(page: Int, x: CGFloat, y: CGFloat, extend: Bool = false) {
         _ = cobrain_click_extend(handle, UInt32(page), Float(x), Float(y), extend)
     }

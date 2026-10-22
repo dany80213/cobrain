@@ -36,6 +36,7 @@ uint8_t *cobrain_style_preview(CobrainDoc *doc, const char *id, float w, float h
 char *cobrain_take_ui_requests(CobrainDoc *doc);
 char *cobrain_para_state(CobrainDoc *doc);
 char *cobrain_selection_rects(CobrainDoc *doc);
+char *cobrain_widget_state(CobrainDoc *doc, const char *kind);
 char *cobrain_run(CobrainDoc *doc, const char *id, const char *params_json);
 void cobrain_free_string(char *s);
 

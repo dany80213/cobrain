@@ -7,9 +7,9 @@ struct ContentView: View {
         VStack(spacing: 0) {
             RibbonView(model: model)
             HStack(spacing: 0) {
-                if model.navigationVisible { NavigationPane(model: model); Divider() }
+                if model.navigationVisible && model.toggles["view.navigationPane"] != false { NavigationPane(model: model); Divider() }
                 VStack(spacing: 0) {
-                    RulerView(model: model)
+                    if model.toggles["view.ruler"] != false { RulerView(model: model) }
                     PagesView(model: model)
                 }
             }
