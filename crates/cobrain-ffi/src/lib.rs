@@ -485,8 +485,8 @@ pub unsafe extern "C" fn cobrain_widget_state(doc: *mut CobrainDoc, kind: *const
     guard(|| {
         // SAFETY: caller contract.
         let (doc, kind) = unsafe { (doc.as_mut()?, from_cstr(kind)?) };
+        let focus = doc.session.sel.focus.clone();
         let s = &doc.session;
-        let focus = s.sel.focus.clone();
         let out = match kind {
             "paraFields" => s
                 .doc
@@ -508,6 +508,24 @@ pub unsafe extern "C" fn cobrain_widget_state(doc: *mut CobrainDoc, kind: *const
                     })
                 })
                 .unwrap_or_default(),
+            "cellSize" => {
+                // The caret cell's laid-out box (a row without a set height shows the height its text gives it).
+                let layout = doc.session.layout();
+                focus
+                    .path
+                    .cell()
+                    .and_then(|(tp, r, c)| {
+                        layout.pages.iter().flat_map(|pg| pg.items.iter()).find_map(|it| match it {
+                            wordcraft_layout::Placed::Cell { rect, table, row, cell, story, .. }
+                                if *table == tp && *row == r && *cell == c && *story == focus.story =>
+                            {
+                                Some(serde_json::json!({ "height": rect.h, "width": rect.w }))
+                            }
+                            _ => None,
+                        })
+                    })
+                    .unwrap_or_default()
+            }
             _ => serde_json::Value::Null,
         };
         Some(to_cstring(if out.is_null() { "{}".to_string() } else { out.to_string() }))

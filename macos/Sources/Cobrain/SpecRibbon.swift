@@ -41,12 +41,13 @@ struct SpecNode: Decodable, Identifiable {
     var params: String?
     var big: Bool?
     var kind: String?
+    var cols: Int?
     var items: [SpecNode]?
     let id = UUID()
 
     init(t: String, items: [SpecNode]? = nil) { self.t = t; self.items = items }
 
-    enum CodingKeys: String, CodingKey { case t, title, icon, label, tip, cmd, params, big, items, kind }
+    enum CodingKeys: String, CodingKey { case t, title, icon, label, tip, cmd, params, big, items, kind, cols }
 
     /// A synthetic menu node holding everything in `group` (used when the group is folded).
     static func menu(of group: SpecNode) -> SpecNode {
@@ -207,6 +208,14 @@ struct SpecRibbon: View {
             VStack(alignment: .leading, spacing: 1) { ForEach(n.items ?? []) { nodeView($0) } }
         case "split": splitButton(n)
         case "widget": InlineWidget(kind: n.kind ?? "", model: model)
+        case "grid":
+            let cols = n.cols ?? 3
+            let cells = n.items ?? []
+            VStack(spacing: 1) {
+                ForEach(0..<((cells.count + cols - 1) / cols), id: \.self) { r in
+                    HStack(spacing: 1) { ForEach(cells[(r * cols)..<min(cells.count, (r + 1) * cols)]) { nodeView($0) } }
+                }
+            }
         case "check":
             Toggle(n.label ?? "", isOn: Binding(get: { model.isPressed(n.cmd ?? "") }, set: { on in model.run(n.cmd ?? "", ["value": on]) }))
                 .toggleStyle(.checkbox).font(.system(size: 11.5)).fixedSize()
@@ -337,7 +346,7 @@ struct InlineWidget: View {
         switch kind {
         case "paraFields": paraFields(state)
         case "tableLook": tableLook(state)
-        case "cellSize": cellSize
+        case "cellSize": cellSize(state)
         default: EmptyView()
         }
     }
@@ -385,11 +394,12 @@ struct InlineWidget: View {
         }
     }
 
-    private var cellSize: some View {
+    private func cellSize(_ s: [String: Any]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            field("Height:", 0, unit: "\"") { model.run("table.rowHeight", ["height": $0 * 72]) }
-            field("Width:", 0, unit: "\"") { model.run("table.columnWidth", ["width": $0 * 72]) }
+            field("Height:", num(s, "height") / 72, unit: "\"") { model.run("table.rowHeight", ["height": $0 * 72]) }
+            field("Width:", num(s, "width") / 72, unit: "\"") { model.run("table.columnWidth", ["width": $0 * 72]) }
         }
+        .opacity(s.isEmpty ? 0.4 : 1).disabled(s.isEmpty)
     }
 }
 

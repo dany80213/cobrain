@@ -9,6 +9,7 @@ import json, re, sys, pathlib
 
 root = pathlib.Path(__file__).resolve().parents[2]
 src = (root / "crates/ui-egui/src/ribbon.rs").read_text()
+src = re.sub(r"crate::widgets::(big_toggle|big|small|split|menu_button|group)\(", r"\1(", src)
 
 TABS = {
     "insert": "Insert", "draw": "Draw", "design": "Design", "layout": "Layout", "references": "References",
@@ -17,6 +18,9 @@ TABS = {
     "picture_format": "Picture Format", "shape_format": "Shape Format", "chart_design": "Chart Design",
     "smart_art_design": "SmartArt Design", "zotero": "Zotero", "home": "Home",
 }
+
+def unesc(t):
+    return re.sub(r"\\(.)", lambda m: {"n": "\n", "t": "\t"}.get(m.group(1), m.group(1)), t)
 
 def fn_body(name):
     m = re.search(r"\nfn %s\(app: &mut WordApp, ui: &mut Ui\) \{" % name, src)
@@ -84,12 +88,12 @@ def split_args(s):
 def lit(a):
     a = a.strip()
     m = re.fullmatch(r'"((?:[^"\\]|\\.)*)"', a)
-    if m: return m.group(1).encode().decode("unicode_escape")
+    if m: return unesc(m.group(1))
     m = re.fullmatch(r'Some\("((?:[^"\\]|\\.)*)"\)', a)
-    if m: return m.group(1).encode().decode("unicode_escape")
+    if m: return unesc(m.group(1))
     if a == "None": return None
     m = re.match(r'if [^{]*\{\s*"((?:[^"\\]|\\.)*)"', a)  # `if on { "A" } else { "B" }` -> "A"
-    if m: return m.group(1).encode().decode("unicode_escape").replace(" \u2713", "")
+    if m: return unesc(m.group(1)).replace(" \u2713", "")
     return False  # not a literal
 
 def params(a):
@@ -178,7 +182,7 @@ def parse(body):
                      r"|crate::colors::menu\(ui, app, [^;]*?Target::cmd\(\"([^\"]+)\"\)"
                      r"|ui\.checkbox\(&mut \w+, tl!\(\"([^\"]+)\"\)\)\.changed\(\) \{\s*let _ = app\.run\(\"([^\"]+)\""
                      r"|crate::equation_tab::insert_button\(ui, app\)"
-                     r"|egui::Grid::new\(\"(?:syms|layout_para|look)\"\)|(?<![\w.:])(?:%s)\(ui, app[^)]*\)|cell_size_boxes\(ui, app\)|crate::wordart_menus::style_gallery\(ui, app, \"([^\"]+)\"\)" % ("|".join(CALLS), "|".join(LOCAL_FNS)))
+                     r"|egui::Grid::new\(\"(?:syms|layout_para|look|cellalign)\"\)|(?<![\w.:])(?:%s)\(ui, app[^)]*\)|cell_size_boxes\(ui, app\)|crate::wordart_menus::style_gallery\(ui, app, \"([^\"]+)\"\)" % ("|".join(CALLS), "|".join(LOCAL_FNS)))
     while True:
         m = pat.search(body, i)
         if not m: break
@@ -197,7 +201,10 @@ def parse(body):
             mc = re.match(r'ui\.checkbox\(&mut \w+, tl!\("([^"]+)"\)\)\.changed\(\) \{\s*let _ = app\.run\("([^"]+)"', g0)
             items.append({"t": "check", "label": mc.group(1), "cmd": mc.group(2)}); i = m.end(); continue
         if g0.startswith("egui::Grid::new"):
-            kind = {"syms": "symbols", "layout_para": "paraFields", "look": "tableLook"}[re.search(r'"(\w+)"', g0).group(1)]
+            gname = re.search(r'"(\w+)"', g0).group(1)
+            if gname == "cellalign":  # the next 9 buttons form a 3 x 3 grid
+                items.append({"t": "gridmark", "cols": 3, "count": 9}); i = m.end(); continue
+            kind = {"syms": "symbols", "layout_para": "paraFields", "look": "tableLook"}[gname]
             items.append({"t": "widget", "kind": kind}); i = m.end(); continue
         if g0.startswith("cell_size_boxes"):
             items.append({"t": "widget", "kind": "cellSize"}); i = m.end(); continue
@@ -267,6 +274,12 @@ def parse(body):
                 skipped[0] += 1; skipped_log.append((name, 'unhandled'))
         except Exception as e:
             skipped[0] += 1; skipped_log.append((name, 'EXC ' + repr(e) + ' ' + str(args)[:150]))
+    k = 0
+    while k < len(items):
+        if items[k].get("t") == "gridmark":
+            mk = items[k]; cells = items[k + 1:k + 1 + mk["count"]]
+            items[k:k + 1 + mk["count"]] = [{"t": "grid", "cols": mk["cols"], "items": cells}]
+        k += 1
     return items
 
 spec = {}
