@@ -8,6 +8,11 @@ import SwiftUI
     _ = NSApplication.shared
     let model = DocumentModel()
     if args.indices.contains(i + 2) { model.open(URL(fileURLWithPath: args[i + 2])) }
+    // COBRAIN_CMDS='[["select.text",{"text":"Equipment"}]]' runs engine commands before the snapshot.
+    if let raw = ProcessInfo.processInfo.environment["COBRAIN_CMDS"], let data = raw.data(using: .utf8),
+       let cmds = try? JSONSerialization.jsonObject(with: data) as? [[Any]] {
+        for c in cmds { if let id = c.first as? String { model.run(id, c.count > 1 ? (c[1] as? [String: Any]) ?? [:] : [:]) } }
+    }
     let host = NSHostingView(rootView: ContentView(model: model).frame(width: 1100, height: 760))
     host.frame = NSRect(x: 0, y: 0, width: 1100, height: 760)
     let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)

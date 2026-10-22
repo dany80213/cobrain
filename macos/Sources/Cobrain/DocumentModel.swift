@@ -15,6 +15,7 @@ final class DocumentModel: ObservableObject {
     @Published private(set) var styles: [(id: String, name: String)] = []
     @Published private(set) var headings: [Engine.Heading] = []
     @Published private(set) var wordCount = 0
+    @Published private(set) var contextualTabs: [String] = []
     @Published private(set) var disabled: Set<String> = []
     @Published private(set) var toggles: [String: Bool] = [:]
     @Published private(set) var caretPage = 0
@@ -34,6 +35,7 @@ final class DocumentModel: ObservableObject {
                 .compactMap { d in (d["id"] as? String).flatMap { id in (d["name"] as? String).map { (id, $0) } } }
         }
         headings = engine.outline()
+        contextualTabs = engine.contextualTabs()
         disabled = engine.disabledCommands()
         toggles = engine.toggleStates()
         if case .success(let i) = engine.run("file.info"), let d = i as? [String: Any] { wordCount = d["words"] as? Int ?? 0 }

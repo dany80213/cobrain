@@ -278,6 +278,47 @@ pub unsafe extern "C" fn cobrain_toggle_states(doc: *mut CobrainDoc) -> *mut c_c
     .unwrap_or(std::ptr::null_mut())
 }
 
+/// Ribbon tabs for the current selection, as a JSON array (`Table Design`, `Picture Format`…).
+/// Same rules as WordCraft's `contextual_tabs`. Free with `cobrain_free_string`.
+///
+/// # Safety
+/// `doc` must come from this library.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_contextual_tabs(doc: *mut CobrainDoc) -> *mut c_char {
+    use wordcraft_engine::cmd::objects::selected;
+    use wordcraft_engine::doc::para::InlineObject;
+    guard(|| {
+        // SAFETY: caller contract.
+        let doc = unsafe { doc.as_mut()? };
+        let s = &doc.session;
+        let mut tabs: Vec<&str> = Vec::new();
+        if s.sel.focus.path.cell().is_some() {
+            tabs.extend(["Table Design", "Table Layout"]);
+        }
+        let obj = selected(s);
+        if matches!(obj, Some((_, InlineObject::Image { .. }))) {
+            tabs.push("Picture Format");
+        }
+        if obj.as_ref().is_some_and(|(_, o)| matches!(o, InlineObject::Shape { .. }) || o.is_canvas()) {
+            tabs.push("Shape Format");
+        }
+        if wordcraft_engine::cmd::smart_art::selected_smart_art(s).is_some() {
+            tabs.push("SmartArt Design");
+        }
+        if wordcraft_engine::cmd::chart::selected_chart(s).is_some() {
+            tabs.push("Chart Design");
+        }
+        if s.math.is_some() {
+            tabs.push("Equation");
+        }
+        if s.view.mode == wordcraft_engine::layout::ViewMode::Outline {
+            tabs.push("Outlining");
+        }
+        Some(to_cstring(serde_json::to_string(&tabs).ok()?))
+    })
+    .unwrap_or(std::ptr::null_mut())
+}
+
 /// Release a string returned by this library.
 ///
 /// # Safety

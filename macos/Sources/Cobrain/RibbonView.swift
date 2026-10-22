@@ -6,13 +6,24 @@ struct RibbonView: View {
     @State private var tab = ProcessInfo.processInfo.environment["COBRAIN_TAB"] ?? "Home"
     @State private var pending: CommandInfo?
 
-    static let tabs = ["File", "Home", "Insert", "Draw", "Design", "Layout", "References", "Mailings", "Review", "View", "Developer", "Help"]
+    static let baseTabs = ["File", "Home", "Insert", "Draw", "Design", "Layout", "References", "Mailings", "Review", "View", "Developer", "Zotero", "Help"]
+
+    /// File, the standard tabs, then the ones that come up with the selection (Outlining sits next to File).
+    private var tabs: [String] {
+        var t = Self.baseTabs
+        for c in model.contextualTabs {
+            if c == "Outlining" { t.insert(c, at: 1) } else if !t.contains(c) { t.append(c) }
+        }
+        return t
+    }
+
+    private var shownTab: String { tabs.contains(tab) ? tab : "Home" }
 
     private var groups: [(name: String, commands: [CommandInfo])] {
         var order: [String] = []
         var map: [String: [CommandInfo]] = [:]
-        for c in model.catalog where c.tab == tab {
-            let g = c.group.isEmpty ? tab : c.group
+        for c in model.catalog where c.tab == shownTab {
+            let g = c.group.isEmpty ? shownTab : c.group
             if map[g] == nil { order.append(g) }
             map[g, default: []].append(c)
         }
@@ -22,11 +33,12 @@ struct RibbonView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 2) {
-                ForEach(Self.tabs, id: \.self) { t in
+                ForEach(tabs, id: \.self) { t in
                     Button { tab = t } label: {
-                        Text(t).font(.system(size: 12, weight: tab == t ? .semibold : .regular))
+                        Text(t).font(.system(size: 12, weight: shownTab == t ? .semibold : .regular))
+                            .foregroundStyle(model.contextualTabs.contains(t) ? Color.accentColor : .primary)
                             .padding(.horizontal, 10).padding(.vertical, 5)
-                            .background(tab == t ? Color(nsColor: .controlBackgroundColor) : .clear, in: RoundedRectangle(cornerRadius: 5))
+                            .background(shownTab == t ? Color(nsColor: .controlBackgroundColor) : .clear, in: RoundedRectangle(cornerRadius: 5))
                     }.buttonStyle(.plain)
                 }
                 Spacer()
@@ -34,9 +46,9 @@ struct RibbonView: View {
             .padding(.horizontal, 8).padding(.top, 4)
             Divider()
             Group {
-                if tab == "Home" {
+                if shownTab == "Home" {
                     HomeRibbon(model: model) { pending = $0 }
-                } else if let spec = SpecNode.tabs[tab], !spec.isEmpty {
+                } else if let spec = SpecNode.tabs[shownTab], !spec.isEmpty {
                     SpecRibbon(groups: spec, model: model) { tab = $0 }
                 } else {
                     ScrollView(.horizontal, showsIndicators: false) {

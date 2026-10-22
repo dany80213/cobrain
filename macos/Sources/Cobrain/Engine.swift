@@ -95,6 +95,12 @@ final class Engine {
         return (try? JSONSerialization.jsonObject(with: Data(String(cString: out).utf8))) as? [String: Bool] ?? [:]
     }
 
+    func contextualTabs() -> [String] {
+        guard let out = cobrain_contextual_tabs(handle) else { return [] }
+        defer { cobrain_free_string(out) }
+        return (try? JSONSerialization.jsonObject(with: Data(String(cString: out).utf8))) as? [String] ?? []
+    }
+
     func click(page: Int, x: CGFloat, y: CGFloat) {
         _ = cobrain_click(handle, UInt32(page), Float(x), Float(y))
     }
