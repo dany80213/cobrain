@@ -37,12 +37,13 @@ struct SpecNode: Decodable, Identifiable {
     var cmd: String?
     var params: String?
     var big: Bool?
+    var kind: String?
     var items: [SpecNode]?
     let id = UUID()
 
     init(t: String, items: [SpecNode]? = nil) { self.t = t; self.items = items }
 
-    enum CodingKeys: String, CodingKey { case t, title, icon, label, tip, cmd, params, big, items }
+    enum CodingKeys: String, CodingKey { case t, title, icon, label, tip, cmd, params, big, items, kind }
 
     /// A synthetic menu node holding everything in `group` (used when the group is folded).
     static func menu(of group: SpecNode) -> SpecNode {
@@ -169,13 +170,32 @@ struct SpecRibbon: View {
     private func popUp(_ n: SpecNode) {
         let menu = NSMenu()
         build(menu, n.items ?? [])
+        MenuWidget.active = menu
         menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+    }
+
+    private func widget(_ n: SpecNode) -> NSMenuItem? {
+        switch n.kind {
+        case "tableGrid":
+            return MenuWidget.item(TableGridView { r, c in MenuWidget.close(); model.run("insert.table", ["rows": r, "cols": c]) })
+        case "symbols":
+            return MenuWidget.item(SymbolGridView { ch in MenuWidget.close(); model.run("insert.symbol", ["char": ch]) })
+        case "colors":
+            let cmd = n.cmd ?? ""
+            return MenuWidget.item(ColorGridView(theme: model.themeColors, pick: { hex in
+                MenuWidget.close(); model.run(cmd, ["color": hex])
+            }, more: {
+                MenuWidget.close(); ColorPanelTarget.show { hex in model.run(cmd, ["color": hex]) }
+            }))
+        default: return nil
+        }
     }
 
     private func build(_ menu: NSMenu, _ items: [SpecNode]) {
         for it in items {
             switch it.t {
             case "sep": menu.addItem(.separator())
+            case "widget": if let w = widget(it) { menu.addItem(w) }
             case "item":
                 let mi = NSMenuItem(title: it.label ?? "", action: #selector(MenuTarget.fire), keyEquivalent: "")
                 let target = MenuTarget { run(it) }

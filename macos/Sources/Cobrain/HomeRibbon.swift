@@ -63,6 +63,24 @@ struct HomeRibbon: View {
         .buttonStyle(.plain).help(help)
     }
 
+    /// A colour drop-down (theme grid) that runs `cmd` with `{"color": hex}`.
+    private func colorDropdown(_ name: String, help: String, cmd: String) -> some View {
+        Button {
+            let menu = NSMenu()
+            menu.addItem(MenuWidget.item(ColorGridView(theme: model.themeColors, pick: { hex in
+                MenuWidget.close(); model.run(cmd, ["color": hex])
+            }, more: {
+                MenuWidget.close(); ColorPanelTarget.show { hex in model.run(cmd, ["color": hex]) }
+            })))
+            MenuWidget.active = menu
+            menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+        } label: {
+            HStack(spacing: 1) { RibbonIcon(name: name, size: 18); Text("▾").font(.system(size: 8)) }
+                .frame(height: 24).padding(.horizontal, 3).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).help(help)
+    }
+
     private func small(_ title: String, _ name: String, _ id: String) -> some View {
         Button { model.run(id) } label: {
             HStack(spacing: 6) { RibbonIcon(name: name, size: 18); Text(title).font(.system(size: 12)) }
@@ -117,9 +135,7 @@ struct HomeRibbon: View {
                     icon("enclose", "format.enclose", help: "Enclose Characters")
                     sepV
                     icon("highlight", "format.highlight", help: "Text Highlight Color", params: ["color": "yellow"])
-                    dropdown("fontcolor", help: "Font Color", [("Automatic", "format.color", ["color": "auto"]), ("Black", "format.color", ["color": "000000"]),
-                                                              ("Red", "format.color", ["color": "C00000"]), ("Blue", "format.color", ["color": "1F4E9E"]),
-                                                              ("Green", "format.color", ["color": "2E7D32"])])
+                    colorDropdown("fontcolor", help: "Font Color", cmd: "format.color")
                 }
             }
         }
@@ -151,7 +167,7 @@ struct HomeRibbon: View {
                     dropdown("lineSpacing", help: "Line and Paragraph Spacing", [("1.0", "para.single", [:]), ("1.5", "para.oneAndHalf", [:]), ("2.0", "para.double", [:]),
                                                                               ("Add Space Before Paragraph", "para.addSpaceBefore", [:]),
                                                                               ("Remove Space After Paragraph", "para.removeSpaceAfter", [:])])
-                    icon("shading", "para.shading", help: "Shading", params: ["color": "FFF2CC"])
+                    colorDropdown("shading", help: "Shading", cmd: "para.shading")
                     icon("borders", "para.borders", help: "Borders", params: ["kind": "bottom"])
                 }
             }

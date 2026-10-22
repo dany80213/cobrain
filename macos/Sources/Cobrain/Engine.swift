@@ -101,6 +101,12 @@ final class Engine {
         return (try? JSONSerialization.jsonObject(with: Data(String(cString: out).utf8))) as? [String] ?? []
     }
 
+    func themeColors() -> [String] {
+        guard let out = cobrain_theme_colors(handle) else { return [] }
+        defer { cobrain_free_string(out) }
+        return (try? JSONSerialization.jsonObject(with: Data(String(cString: out).utf8))) as? [String] ?? []
+    }
+
     func click(page: Int, x: CGFloat, y: CGFloat) {
         _ = cobrain_click(handle, UInt32(page), Float(x), Float(y))
     }

@@ -319,6 +319,21 @@ pub unsafe extern "C" fn cobrain_contextual_tabs(doc: *mut CobrainDoc) -> *mut c
     .unwrap_or(std::ptr::null_mut())
 }
 
+/// The document's theme colours as a JSON array of `RRGGBB` strings. Free with `cobrain_free_string`.
+///
+/// # Safety
+/// `doc` must come from this library.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_theme_colors(doc: *mut CobrainDoc) -> *mut c_char {
+    guard(|| {
+        // SAFETY: caller contract.
+        let doc = unsafe { doc.as_mut()? };
+        let hex: Vec<String> = doc.session.doc.settings.theme_colors.iter().map(|c| c.hex()).collect();
+        Some(to_cstring(serde_json::to_string(&hex).ok()?))
+    })
+    .unwrap_or(std::ptr::null_mut())
+}
+
 /// Release a string returned by this library.
 ///
 /// # Safety

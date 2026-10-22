@@ -13,7 +13,16 @@ import SwiftUI
        let cmds = try? JSONSerialization.jsonObject(with: data) as? [[Any]] {
         for c in cmds { if let id = c.first as? String { model.run(id, c.count > 1 ? (c[1] as? [String: Any]) ?? [:] : [:]) } }
     }
-    let host = NSHostingView(rootView: ContentView(model: model).frame(width: 1100, height: 760))
+    let host: NSHostingView<AnyView>
+    if ProcessInfo.processInfo.environment["COBRAIN_WIDGET"] != nil {
+        host = NSHostingView(rootView: AnyView(HStack(alignment: .top, spacing: 12) {
+            TableGridView { _, _ in }
+            ColorGridView(theme: model.themeColors, pick: { _ in }, more: {})
+            SymbolGridView { _ in }
+        }.padding().background(Color.white).frame(width: 1100, height: 760, alignment: .topLeading)))
+    } else {
+        host = NSHostingView(rootView: AnyView(ContentView(model: model).frame(width: 1100, height: 760)))
+    }
     host.frame = NSRect(x: 0, y: 0, width: 1100, height: 760)
     let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
     window.contentView = host

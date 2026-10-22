@@ -27,6 +27,7 @@ char *cobrain_outline(CobrainDoc *doc);
 char *cobrain_disabled_commands(CobrainDoc *doc);
 char *cobrain_toggle_states(CobrainDoc *doc);
 char *cobrain_contextual_tabs(CobrainDoc *doc);
+char *cobrain_theme_colors(CobrainDoc *doc);
 char *cobrain_run(CobrainDoc *doc, const char *id, const char *params_json);
 void cobrain_free_string(char *s);
 

@@ -101,12 +101,23 @@ def closure_body(a):
 def parse(body):
     items = []
     i = 0
-    pat = re.compile(r"(?<![\w.:])(%s)\(|ui\.separator\(\)" % "|".join(CALLS))
+    pat = re.compile(r"(?<![\w.:])(%s)\(|ui\.separator\(\)|crate::dialogs::table_grid_picker\(ui, app\)"
+                     r"|crate::colors::menu\(ui, app, [^;]*?Target::cmd\(\"([^\"]+)\"\)"
+                     r"|egui::Grid::new\(\"syms\"\)|crate::wordart_menus::style_gallery\(ui, app, \"([^\"]+)\"\)" % "|".join(CALLS))
     while True:
         m = pat.search(body, i)
         if not m: break
-        if m.group(0) == "ui.separator()":
+        g0 = m.group(0)
+        if g0 == "ui.separator()":
             items.append({"t": "sep"}); i = m.end(); continue
+        if g0.startswith("crate::dialogs::table_grid_picker"):
+            items.append({"t": "widget", "kind": "tableGrid"}); i = m.end(); continue
+        if g0.startswith("crate::colors::menu"):
+            items.append({"t": "widget", "kind": "colors", "cmd": m.group(2)}); i = m.end(); continue
+        if g0.startswith("egui::Grid::new"):
+            items.append({"t": "widget", "kind": "symbols"}); i = m.end(); continue
+        if g0.startswith("crate::wordart_menus::style_gallery"):
+            items.append({"t": "widget", "kind": "wordArt", "cmd": m.group(3)}); i = m.end(); continue
         name = m.group(1)
         j = m.end() - 1
         end = balanced(body, j, "(", ")")
