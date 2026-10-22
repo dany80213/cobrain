@@ -24,6 +24,8 @@ int32_t cobrain_caret(CobrainDoc *doc, uint32_t *page, float *x, float *top, flo
 
 char *cobrain_commands(CobrainDoc *doc);
 char *cobrain_outline(CobrainDoc *doc);
+char *cobrain_disabled_commands(CobrainDoc *doc);
+char *cobrain_toggle_states(CobrainDoc *doc);
 char *cobrain_run(CobrainDoc *doc, const char *id, const char *params_json);
 void cobrain_free_string(char *s);
 

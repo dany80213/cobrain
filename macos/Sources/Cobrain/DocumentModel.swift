@@ -15,6 +15,8 @@ final class DocumentModel: ObservableObject {
     @Published private(set) var styles: [(id: String, name: String)] = []
     @Published private(set) var headings: [Engine.Heading] = []
     @Published private(set) var wordCount = 0
+    @Published private(set) var disabled: Set<String> = []
+    @Published private(set) var toggles: [String: Bool] = [:]
     @Published private(set) var caretPage = 0
     @Published private(set) var pageWidth: CGFloat = 612
     @Published var navigationVisible = true
@@ -32,12 +34,23 @@ final class DocumentModel: ObservableObject {
                 .compactMap { d in (d["id"] as? String).flatMap { id in (d["name"] as? String).map { (id, $0) } } }
         }
         headings = engine.outline()
+        disabled = engine.disabledCommands()
+        toggles = engine.toggleStates()
         if case .success(let i) = engine.run("file.info"), let d = i as? [String: Any] { wordCount = d["words"] as? Int ?? 0 }
         if let c = engine.caret { caretPage = c.page }
         if let p = engine.pageSize(0) { pageWidth = p.width }
     }
 
     func isOn(_ key: String) -> Bool { (format[key] as? Bool) == true }
+    func isEnabled(_ cmd: String) -> Bool { cmd.isEmpty || !disabled.contains(cmd) }
+
+    /// Pressed state of a toggle command: formatting at the caret, or a document/view flag.
+    func isPressed(_ cmd: String) -> Bool {
+        if let t = toggles[cmd] { return t }
+        let formatKeys = ["format.bold": "bold", "format.italic": "italic", "format.underline": "underline", "format.strikethrough": "strike",
+                          "format.subscript": "subscript", "format.superscript": "superscript", "format.border": "border"]
+        return formatKeys[cmd].map(isOn) ?? false
+    }
 
 
     var title: String { fileURL?.lastPathComponent ?? "Untitled" }

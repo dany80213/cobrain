@@ -242,6 +242,42 @@ pub unsafe extern "C" fn cobrain_outline(doc: *mut CobrainDoc) -> *mut c_char {
     .unwrap_or(std::ptr::null_mut())
 }
 
+/// Ids of the commands that are disabled right now (the ribbon greys them out), as a JSON array.
+/// Free with `cobrain_free_string`.
+///
+/// # Safety
+/// `doc` must come from this library.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_disabled_commands(doc: *mut CobrainDoc) -> *mut c_char {
+    guard(|| {
+        // SAFETY: caller contract.
+        let doc = unsafe { doc.as_mut()? };
+        let reg = doc.session.registry.clone();
+        let ids: Vec<&str> = reg.all().iter().filter(|s| (s.enabled)(&doc.session).is_some()).map(|s| s.id).collect();
+        Some(to_cstring(serde_json::to_string(&ids).ok()?))
+    })
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// Pressed state of toggle commands as JSON `{"id": bool}`. Free with `cobrain_free_string`.
+///
+/// # Safety
+/// `doc` must come from this library.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_toggle_states(doc: *mut CobrainDoc) -> *mut c_char {
+    guard(|| {
+        // SAFETY: caller contract.
+        let doc = unsafe { doc.as_mut()? };
+        let s = &doc.session;
+        let map = serde_json::json!({
+            "review.trackChanges": s.doc.settings.track_changes,
+            "view.marks": s.view.marks,
+        });
+        Some(to_cstring(map.to_string()))
+    })
+    .unwrap_or(std::ptr::null_mut())
+}
+
 /// Release a string returned by this library.
 ///
 /// # Safety

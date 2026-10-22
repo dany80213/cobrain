@@ -82,6 +82,19 @@ final class Engine {
         }
     }
 
+    func disabledCommands() -> Set<String> {
+        guard let out = cobrain_disabled_commands(handle) else { return [] }
+        defer { cobrain_free_string(out) }
+        let ids = (try? JSONSerialization.jsonObject(with: Data(String(cString: out).utf8))) as? [String] ?? []
+        return Set(ids)
+    }
+
+    func toggleStates() -> [String: Bool] {
+        guard let out = cobrain_toggle_states(handle) else { return [:] }
+        defer { cobrain_free_string(out) }
+        return (try? JSONSerialization.jsonObject(with: Data(String(cString: out).utf8))) as? [String: Bool] ?? [:]
+    }
+
     func click(page: Int, x: CGFloat, y: CGFloat) {
         _ = cobrain_click(handle, UInt32(page), Float(x), Float(y))
     }
