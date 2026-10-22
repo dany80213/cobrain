@@ -32,7 +32,13 @@ Done and checked against the reference screenshots:
 
 ## TO DO before starting the rest (in this order)
 Items 1–9 of the first plan are done as far as listed above; what is still **missing** from them:
-1. **Generator**: ~28 calls still skipped by `gen_ribbon.py` (dynamic labels inside loops). Run `python3 macos/tools/gen_ribbon.py -v`, compare each tab with `ref/<Tab>.png` and fix. Not yet compared tab by tab: Draw, Design, Layout, References, Mailings, View, Developer, Help and the contextual tabs; Home/Insert/Review were.
+1. **Generator** (`gen_ribbon.py`): now unrolls literal `for` loops, inlines the local helper fns of `ribbon.rs`, reads `ui.checkbox` rows, number-field groups and the 3×3 cell-alignment grid; labels keep their Unicode. Compared against the reference at 1440 pt and matching: Insert, Layout, View, References, Mailings, Help, Review, Table Layout (Draw/Design only partly). Still missing:
+   - **Design › Document Formatting**: the style-set gallery (`style_set_box`, 7 tiles with previews).
+   - **Table Design › Table Styles**: the table-style tile gallery (`previews::table_style_tile`) and the Shading colour split button (shows “·”).
+   - **Draw**: pressed state of the active pen tool (lives in `app.canvas`, not the engine), “Ink to Math” greyed out in the reference.
+   - **Review**: Translate greyed when no language pair; Tracking group dialog launcher (⇲) not drawn (same for the other group launchers).
+   - **Picture/Shape/Chart/SmartArt Format**: Size groups (width/height/rotation fields), not compared yet; `cell_size_boxes` shows the cell's laid-out size but edits only through `table.rowHeight`/`table.columnWidth`.
+   - ~5 calls with computed labels are still skipped (`python3 macos/tools/gen_ribbon.py -v`).
 2. **Ribbon fit**: only Styles has a compact variant; `ribbon_fit.rs` also shrinks Font/Paragraph. Folded groups show a generic “…” icon (upstream picks a group icon).
 3. **Menus** still missing: shapes gallery, bullet/numbering libraries, WordArt/text effects galleries, table styles gallery (`previews::table_style_tile`), font combo with recent fonts and previews, Margins/Size/Columns menus with their live previews, theme gallery.
 4. **Dialogs** not ported (see `dialogs*.rs`, ~16k lines): Tabs, Borders and Shading, Bullets/Numbering definitions, Columns, Table Properties, Insert Picture, Chart, SmartArt, Table of Contents, Citations/Sources, Mail Merge, Track Changes options, Customize Ribbon/Keyboard, Options, Manage Styles, Colors (custom). Existing ones are simplified versions: units are always inches, no tabs inside Font/Paragraph (Advanced, Line and Page Breaks), no preview pane.
