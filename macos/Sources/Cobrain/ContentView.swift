@@ -19,6 +19,7 @@ struct ContentView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) { StatusBar(model: model) }
             .toolbar {
                 ToolbarItemGroup(placement: .navigation) {
+                    Toggle(isOn: $model.autosave) { Text("AutoSave").font(.system(size: 12)) }.toggleStyle(.switch).controlSize(.mini)
                     Button { model.save() } label: { Label("Save", systemImage: "square.and.arrow.down") }
                     Button { model.run("edit.undo") } label: { Label("Undo", systemImage: "arrow.uturn.backward") }
                     Button { model.run("edit.redo") } label: { Label("Redo", systemImage: "arrow.uturn.forward") }
@@ -26,10 +27,8 @@ struct ContentView: View {
                 ToolbarItem(placement: .principal) {
                     Text("\(model.title) — \(model.fileURL == nil ? "Not saved" : "Saved")").font(.headline)
                 }
-                ToolbarItemGroup(placement: .primaryAction) {
-                    Button { model.open() } label: { Label("Open", systemImage: "folder") }
-                    Button { model.navigationVisible.toggle() } label: { Label("Navigation", systemImage: "sidebar.left") }
-                }
+                ToolbarItemGroup(placement: .primaryAction) { TitleActions(model: model) }
             }
+            .overlay { if model.showBackstage { BackstageView(model: model) } }
     }
 }

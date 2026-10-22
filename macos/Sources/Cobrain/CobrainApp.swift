@@ -8,6 +8,7 @@ import SwiftUI
     _ = NSApplication.shared
     let model = DocumentModel()
     if args.indices.contains(i + 2) { model.open(URL(fileURLWithPath: args[i + 2])) }
+    if ProcessInfo.processInfo.environment["COBRAIN_BACKSTAGE"] != nil { model.showBackstage = true }
     // COBRAIN_CMDS='[["select.text",{"text":"Equipment"}]]' runs engine commands before the snapshot.
     if let raw = ProcessInfo.processInfo.environment["COBRAIN_CMDS"], let data = raw.data(using: .utf8),
        let cmds = try? JSONSerialization.jsonObject(with: data) as? [[Any]] {
@@ -41,30 +42,40 @@ import SwiftUI
     exit(0)
 }
 
+/// One window = one document model.
+struct WindowRoot: View {
+    @StateObject private var model = DocumentModel()
+    let url: URL?
+
+    var body: some View {
+        ContentView(model: model)
+            .frame(minWidth: 640, minHeight: 480)
+            .focusedSceneObject(model)
+            .onOpenURL { model.open($0) }
+            .onAppear { if let url { model.open(url) } }
+    }
+}
+
 @main
 struct CobrainApp: App {
     init() { snapshotIfRequested() }
 
-    @StateObject private var model = DocumentModel()
-
     var body: some Scene {
-        WindowGroup {
-            ContentView(model: model)
-                .frame(minWidth: 640, minHeight: 480)
-                .focusedSceneObject(model)
-                .onOpenURL { model.open($0) }
-        }
+        WindowGroup(id: "document") { WindowRoot(url: nil) }
         .commands { CobrainCommands() }
     }
 }
 
 struct CobrainCommands: Commands {
     @FocusedObject private var model: DocumentModel?
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            Button("New") { model?.newDocument() }.keyboardShortcut("n")
+            Button("New") { openWindow(id: "document") }.keyboardShortcut("n")
             Button("Open…") { model?.open() }.keyboardShortcut("o")
+            Button("Print…") { model?.printDocument() }.keyboardShortcut("p")
+            Button("Export as PDF…") { model?.exportPDF() }
         }
         CommandGroup(replacing: .saveItem) {
             Button("Save") { model?.save() }.keyboardShortcut("s")

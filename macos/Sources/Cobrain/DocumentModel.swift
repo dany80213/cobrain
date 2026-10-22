@@ -11,6 +11,9 @@ final class DocumentModel: ObservableObject {
     @Published var zoom: CGFloat = 1.0
     @Published var lastError: String?
     @Published var dialog: DialogKind?
+    @Published var showBackstage = false
+    @Published var autosave = false
+    private var autosaveWork: DispatchWorkItem?
     @Published private(set) var scrollToCaret = 0
     private(set) lazy var catalog: [CommandInfo] = engine.commands()
 
@@ -79,6 +82,22 @@ final class DocumentModel: ObservableObject {
         handleUIRequests()
         refresh()
         revision += 1
+        scheduleAutosave()
+    }
+
+    /// AutoSave: write the file two seconds after the last change (only for a document that has a file).
+    private func scheduleAutosave() {
+        guard autosave, let url = fileURL else { return }
+        autosaveWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.write(to: url) }
+        autosaveWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
+    }
+
+    func share() {
+        guard let url = fileURL else { exportPDF(); return }
+        let picker = NSSharingServicePicker(items: [url])
+        if let v = NSApp.keyWindow?.contentView { picker.show(relativeTo: .zero, of: v, preferredEdge: .minY) }
     }
 
     /// The engine asks the UI for things (open a dialog, a file panel, scroll to the caret).

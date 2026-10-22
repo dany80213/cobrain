@@ -17,10 +17,13 @@ enum Icons {
 struct RibbonIcon: View {
     let name: String
     var size: CGFloat = 18
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         if let img = Icons.image(name) {
+            // Dark mode: flip lightness, keep hues (WordCraft draws its icons for a light ribbon).
             Image(nsImage: img).resizable().interpolation(.high).frame(width: size, height: size)
+                .modifier(DarkIcon(dark: scheme == .dark))
         } else {
             Color.clear.frame(width: size, height: size)
         }
@@ -307,4 +310,11 @@ final class MenuTarget: NSObject {
     let action: () -> Void
     init(_ action: @escaping () -> Void) { self.action = action }
     @objc func fire() { action() }
+}
+
+private struct DarkIcon: ViewModifier {
+    let dark: Bool
+    func body(content: Content) -> some View {
+        if dark { content.colorInvert().hueRotation(.degrees(180)) } else { content }
+    }
 }

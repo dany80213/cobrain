@@ -21,21 +21,28 @@ The rest of this file (below "WordCraft rules") is upstream's and still governs 
 - New engine data the UI needs goes through `crates/cobrain-ffi` (the only crate allowed `unsafe`; keep `catch_unwind` guards, no panics) and `macos/Sources/CCobrain/include/cobrain.h`.
 
 ## Status
-Done: open/save (.docx etc.), page rendering, caret by click, typing/deleting/arrows, undo/redo, clipboard via system pasteboard, Home tab (matches reference), generated ribbon for all other tabs with real icons, Navigation (headings), status bar, horizontal ruler, sample document.
+Done and checked against the reference screenshots:
+- Open/save (.docx etc.), page rendering, typing, deleting, arrows, undo/redo, system clipboard, print/PDF export, multiple windows, AutoSave.
+- Mouse: click, drag, shift-click, double/triple click; selection and Find highlights drawn; shortcuts come from the engine registry (`performKeyEquivalent`).
+- Ribbon: all tabs generated from `ribbon.rs` with WordCraft's icons, split buttons, responsive folding (compact Styles gallery, then drop-downs), enabled/pressed state, contextual tabs (Table, Picture, Shape, Chart, SmartArt, Outlining), Zotero tab.
+- Home tab hand-written (Clipboard/Font/Paragraph/Styles/Editing/Voice/Editor) with engine-rendered style previews.
+- Menus: table grid, theme/standard colour grid (+ system colour panel), symbol grid.
+- Dialogs: Font, Paragraph, Page Setup, Find/Replace, Insert Table, Link, Bookmark, Go To, Field, Watermark, Zoom, Word Count, Symbol, Line Numbers, Hyphenation, command search. Anything else the engine asks for shows “not ported yet” (`DialogKind.unavailable`).
+- Chrome: title toolbar (AutoSave, save/undo/redo, title, “Search commands and help”, Comments/Editing/Share), File backstage (Info/New/Open/Save/Save As/Export/Print), vertical and horizontal rulers, status bar, Navigation (headings), dark-mode icons (inverted).
 
 ## TO DO before starting the rest (in this order)
-1. **Fix the generator's blind spots** (`gen_ribbon.py` skips 37 calls it can't read). Known missing vs. reference: Review › Track Changes, All Markup, Comments ▾, Changes ▾, Compare, Protect ▾, Ink; check every tab against `ref/<Tab>.png` and list what each lacks. Extend the parser (loops, `split(...)`, toggles, `if`) or add hand-written groups.
-2. **Responsive ribbon**: groups collapse to a single dropdown button as the window narrows (`ribbon_fit.rs`: full → compact → collapsed). Port that planning logic; the reference is 1440 pt wide.
-3. **Toggle/enabled state**: pressed state for toggles and greyed-out disabled commands (engine `enabled` reason is not exposed yet: add to `cobrain_commands`/a state call).
-4. **Contextual tabs** (Table Design/Layout, Picture/Shape Format, Chart, SmartArt, Equation, Outlining) appear with the selection; Zotero tab; tab order and the “Customize Ribbon” layout (`wordcraft_engine::ribbon`).
-5. **Dynamic menus**: table grid picker, symbol grid, colour grids (theme colours), shapes gallery, bullet/number libraries, Styles gallery with true previews (`previews.rs`), font combo with recent fonts and previews.
-6. **Dialogs** (all `ui.dialog` commands currently show “not available”): start with Font, Paragraph, Insert Table, Find/Replace (+ Navigation Results tab), Page Setup, Symbol, Hyperlink; list in `crates/ui-egui/src/dialogs*.rs`.
-7. **Chrome**: custom title bar (AutoSave, save/undo/redo, centred title, “Search commands and help”, Comments / Editing / Share buttons), vertical ruler, accurate horizontal ruler with indent markers and tab stops, File › Backstage (`backstage.rs`), dark mode (`theme.rs` tokens).
-8. **Editing**: mouse selection (drag, double/triple click), shift-click, IME/marked text, drag-and-drop, find highlights, spelling squiggles, context menu (`canvas.rs`), keyboard shortcuts from the command registry (`CommandSpec.shortcut`, `Mod`=⌘), Format Painter.
-9. **Documents**: `NSDocument` integration (autosave, versions, recents, multiple windows/tabs, `.docx` UTI/open-with), print/PDF export UI, password-protected files.
-10. **Packaging**: own app icon (current icon is WordCraft's placeholder), bundle id, codesign/notarize, CI (`macos-latest`) running `cargo test -p cobrain-ffi` and the Swift build.
+Items 1–9 of the first plan are done as far as listed above; what is still **missing** from them:
+1. **Generator**: ~28 calls still skipped by `gen_ribbon.py` (dynamic labels inside loops). Run `python3 macos/tools/gen_ribbon.py -v`, compare each tab with `ref/<Tab>.png` and fix. Not yet compared tab by tab: Draw, Design, Layout, References, Mailings, View, Developer, Help and the contextual tabs; Home/Insert/Review were.
+2. **Ribbon fit**: only Styles has a compact variant; `ribbon_fit.rs` also shrinks Font/Paragraph. Folded groups show a generic “…” icon (upstream picks a group icon).
+3. **Menus** still missing: shapes gallery, bullet/numbering libraries, WordArt/text effects galleries, table styles gallery (`previews::table_style_tile`), font combo with recent fonts and previews, Margins/Size/Columns menus with their live previews, theme gallery.
+4. **Dialogs** not ported (see `dialogs*.rs`, ~16k lines): Tabs, Borders and Shading, Bullets/Numbering definitions, Columns, Table Properties, Insert Picture, Chart, SmartArt, Table of Contents, Citations/Sources, Mail Merge, Track Changes options, Customize Ribbon/Keyboard, Options, Manage Styles, Colors (custom). Existing ones are simplified versions: units are always inches, no tabs inside Font/Paragraph (Advanced, Line and Page Breaks), no preview pane.
+5. **Chrome**: title bar uses the system toolbar (not upstream's integrated one); ruler has no indent markers/tab stops and is not draggable; backstage lacks Home/recent files, Options, Close; dark mode only inverts icons (document pane/ribbon tokens from `theme.rs` are not ported); no Reading/Web/Outline view modes.
+6. **Editing**: IME/marked text (`NSTextInputClient`), drag-and-drop of text, spelling squiggles come from the page render but the context menu with suggestions (`canvas.rs`) is missing, right-click menu, object selection/resizing (pictures, shapes, tables), table mouse tools, scroll-to-caret (`scrollTo` request is only counted, not acted on).
+7. **Documents**: no `NSDocument` (versions, window restoration, dirty-state close prompts, `.docx` UTI registration beyond Info.plist), password-protected files, recent files menu in the backstage.
 
-After these, Cobrain-specific features can start (to be defined with the owners: `dany80213`, `thomas-addamo`, `alessandro-guttadauro`).
+Item 10 of the first plan (packaging: own icon, bundle id, signing/notarization, CI) was deliberately left out by the owner.
+
+After the items above, Cobrain-specific features can start (to be defined with `dany80213`, `thomas-addamo`, `alessandro-guttadauro`).
 
 ## Working rules
 - Commit after each arc that builds; message says what and which tab/dialog (`Review: generator handles split()`); keep the Co-Authored-By trailer.

@@ -57,6 +57,17 @@ final class PagesNSView: NSView {
             ctx.setFillColor(NSColor.white.cgColor)
             ctx.fill(rect)
             ctx.restoreGState()
+            // Vertical ruler beside the page (inches from the top edge).
+            let z = model.zoom, inch = 72 * z
+            NSColor.secondaryLabelColor.setFill()
+            var yy = rect.minY + 72 * z
+            var n = 0
+            while yy < rect.maxY - 36 * z {
+                NSRect(x: rect.minX - 14, y: yy, width: 8, height: 1).fill()
+                if n > 0 { ("\(n)" as NSString).draw(at: NSPoint(x: rect.minX - 26, y: yy - 6), withAttributes: [.font: NSFont.systemFont(ofSize: 9), .foregroundColor: NSColor.secondaryLabelColor]) }
+                NSRect(x: rect.minX - 11, y: yy + inch / 2, width: 5, height: 1).fill()
+                yy += inch; n += 1
+            }
             if let img = entry?.image {
                 // CGContext in a flipped view draws images upside down; flip locally.
                 ctx.saveGState()

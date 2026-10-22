@@ -34,7 +34,7 @@ struct RibbonView: View {
         VStack(spacing: 0) {
             HStack(spacing: 2) {
                 ForEach(tabs, id: \.self) { t in
-                    Button { tab = t } label: {
+                    Button { if t == "File" { model.showBackstage = true } else { tab = t } } label: {
                         Text(t).font(.system(size: 12, weight: shownTab == t ? .semibold : .regular))
                             .foregroundStyle(model.contextualTabs.contains(t) ? Color.accentColor : .primary)
                             .padding(.horizontal, 10).padding(.vertical, 5)
