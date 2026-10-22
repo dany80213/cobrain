@@ -16,6 +16,7 @@ crate-type = ["staticlib", "rlib"]
 [dependencies]
 wordcraft-engine = { workspace = true }
 wordcraft-doc = { workspace = true }
+wordcraft-geom = { workspace = true }
 wordcraft-layout = { workspace = true }
 wordcraft-render = { workspace = true }
 serde_json = { workspace = true }

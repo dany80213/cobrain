@@ -1,4 +1,5 @@
 import AppKit
+import PDFKit
 import SwiftUI
 
 /// Observable document state shared by the window, the menus and the page view.
@@ -102,6 +103,24 @@ final class DocumentModel: ObservableObject {
         }
     }
 
+    /// Runs a command id coming from a shortcut; file commands that need a panel are handled here.
+    func perform(shortcutCommand id: String) {
+        switch id {
+        case "file.save": save()
+        case "file.saveAs": saveAs()
+        case "file.open": open()
+        case "file.new": newDocument()
+        case "file.print": printDocument()
+        default: run(id)
+        }
+    }
+
+    func printDocument() {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("cobrain-print-\(UUID().uuidString).pdf")
+        guard engine.save(to: tmp.path), let pdf = PDFDocument(url: tmp) else { lastError = "Could not prepare the document for printing"; return }
+        pdf.printOperation(for: NSPrintInfo.shared, scalingMode: .pageScaleToFit, autoRotate: true)?.run()
+    }
+
     func exportPDF() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.pdf]
@@ -125,8 +144,8 @@ final class DocumentModel: ObservableObject {
         else if let t = pb.string(forType: .string) { run("edit.paste", ["text": t]) }
     }
 
-    func click(page: Int, x: CGFloat, y: CGFloat) {
-        engine.click(page: page, x: x, y: y)
+    func click(page: Int, x: CGFloat, y: CGFloat, extend: Bool = false) {
+        engine.click(page: page, x: x, y: y, extend: extend)
         refresh()
         revision += 1
     }

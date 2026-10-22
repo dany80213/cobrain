@@ -736,6 +736,7 @@ dependencies = [
  "serde_json",
  "wordcraft-doc",
  "wordcraft-engine",
+ "wordcraft-geom",
  "wordcraft-layout",
  "wordcraft-render",
 ]

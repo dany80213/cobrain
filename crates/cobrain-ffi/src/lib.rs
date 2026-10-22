@@ -439,6 +439,38 @@ pub unsafe extern "C" fn cobrain_para_state(doc: *mut CobrainDoc) -> *mut c_char
     .unwrap_or(std::ptr::null_mut())
 }
 
+/// Selection and Find highlight rectangles in page points, as JSON
+/// `{"selection": [[page,x,y,w,h]…], "find": […]}`. Free with `cobrain_free_string`.
+///
+/// # Safety
+/// `doc` must come from this library.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_selection_rects(doc: *mut CobrainDoc) -> *mut c_char {
+    guard(|| {
+        // SAFETY: caller contract.
+        let doc = unsafe { doc.as_mut()? };
+        let layout = doc.session.layout();
+        let hint = doc.session.page_hint;
+        let row = |(pi, r): (usize, wordcraft_geom::Rect)| serde_json::json!([pi, r.x, r.y, r.w, r.h]);
+        let mut sel = Vec::new();
+        if !doc.session.sel.is_collapsed() {
+            if let Some(range) = doc.session.cell_range() {
+                sel.extend(wordcraft_engine::cmd::table_mouse::cell_rects(&layout, &doc.session.doc, range).into_iter().map(row));
+            } else {
+                let (a, b) = doc.session.sel.ordered();
+                sel.extend(wordcraft_engine::cmd::table_mouse::selection_rects(&layout, &doc.session.doc, &a, &b, hint).into_iter().map(row));
+            }
+        }
+        let marks: Vec<_> = doc.session.find_highlights().iter().take(5000).cloned().collect();
+        let mut find = Vec::new();
+        for (a, b) in &marks {
+            find.extend(layout.selection_rects(&doc.session.doc, a, b, hint).into_iter().map(row));
+        }
+        Some(to_cstring(serde_json::json!({ "selection": sel, "find": find }).to_string()))
+    })
+    .unwrap_or(std::ptr::null_mut())
+}
+
 /// Release a string returned by this library.
 ///
 /// # Safety
@@ -465,6 +497,38 @@ pub unsafe extern "C" fn cobrain_click(doc: *mut CobrainDoc, page: u32, x: f32, 
         Some(0)
     })
     .unwrap_or(-1)
+}
+
+/// Like `cobrain_click`, but with `extend` the selection grows from its anchor (drag, shift-click).
+///
+/// # Safety
+/// `doc` must come from this library.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_click_extend(doc: *mut CobrainDoc, page: u32, x: f32, y: f32, extend: bool) -> i32 {
+    guard(|| {
+        // SAFETY: caller contract.
+        let doc = unsafe { doc.as_mut()? };
+        let pos = doc.session.layout().hit(page as usize, x, y, StoryRef::Body)?;
+        doc.session.run("caret.set", &serde_json::json!({ "pos": pos, "extend": extend })).ok()?;
+        Some(0)
+    })
+    .unwrap_or(-1)
+}
+
+/// The command bound to a shortcut such as `Mod+B` or `Mod+Shift+Z` (`Mod` = ⌘), or null.
+/// Free with `cobrain_free_string`.
+///
+/// # Safety
+/// `doc` must come from this library; `key` a valid NUL-terminated UTF-8 string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_shortcut(doc: *mut CobrainDoc, key: *const c_char) -> *mut c_char {
+    guard(|| {
+        // SAFETY: caller contract.
+        let (doc, key) = unsafe { (doc.as_mut()?, from_cstr(key)?) };
+        let id = doc.session.registry.by_shortcut(key)?.id;
+        Some(to_cstring(id.to_string()))
+    })
+    .unwrap_or(std::ptr::null_mut())
 }
 
 /// Caret rectangle of the selection focus: page index and x/top/height in page points.

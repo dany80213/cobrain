@@ -66,7 +66,17 @@ final class PagesNSView: NSView {
                 ctx.restoreGState()
             }
         }
-        if let c = model.engine.caret, pageRects.indices.contains(c.page), caretOn {
+        let marks = model.engine.selectionRects()
+        func fill(_ rects: [[Double]], _ color: NSColor) {
+            color.setFill()
+            for r in rects where r.count == 5 && pageRects.indices.contains(Int(r[0])) {
+                let pr = pageRects[Int(r[0])], z = model.zoom
+                NSRect(x: pr.minX + CGFloat(r[1]) * z, y: pr.minY + CGFloat(r[2]) * z, width: CGFloat(r[3]) * z, height: CGFloat(r[4]) * z).fill()
+            }
+        }
+        fill(marks.find, NSColor.systemYellow.withAlphaComponent(0.45))
+        fill(marks.selection, NSColor.selectedTextBackgroundColor.withAlphaComponent(0.5))
+        if let c = model.engine.caret, pageRects.indices.contains(c.page), caretOn, marks.selection.isEmpty {
             let r = pageRects[c.page]
             let z = model.zoom
             NSColor.black.setFill()
@@ -91,13 +101,51 @@ final class PagesNSView: NSView {
 
     // MARK: input
 
+    private func hit(_ event: NSEvent) -> (page: Int, x: CGFloat, y: CGFloat)? {
+        let p = convert(event.locationInWindow, from: nil)
+        let i = pageRects.firstIndex(where: { $0.contains(p) })
+            ?? pageRects.indices.min(by: { abs(pageRects[$0].midY - p.y) < abs(pageRects[$1].midY - p.y) })
+        guard let i else { return nil }
+        let r = pageRects[i]
+        return (i, (p.x - r.minX) / model.zoom, (p.y - r.minY) / model.zoom)
+    }
+
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
-        let p = convert(event.locationInWindow, from: nil)
-        guard let i = pageRects.firstIndex(where: { $0.contains(p) }) else { return }
-        let r = pageRects[i]
+        guard let h = hit(event) else { return }
         caretOn = true
-        model.click(page: i, x: (p.x - r.minX) / model.zoom, y: (p.y - r.minY) / model.zoom)
+        let extend = event.modifierFlags.contains(.shift)
+        model.click(page: h.page, x: h.x, y: h.y, extend: extend)
+        if event.clickCount == 2 { model.run("select.word") } else if event.clickCount >= 3 { model.run("select.paragraph") }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let h = hit(event) else { return }
+        model.click(page: h.page, x: h.x, y: h.y, extend: true)
+        autoscroll(with: event)
+    }
+
+    /// ⌘/⌃/⌥ shortcuts come from the engine's registry (`CommandSpec.shortcut`, `Mod` = ⌘).
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard window?.firstResponder === self, let key = Self.shortcutName(event), let id = model.engine.command(forShortcut: key) else { return false }
+        model.perform(shortcutCommand: id)
+        return true
+    }
+
+    static func shortcutName(_ e: NSEvent) -> String? {
+        let f = e.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard f.contains(.command) || f.contains(.control) || f.contains(.function) || (e.keyCode >= 96 && e.keyCode <= 122) else { return nil }
+        var parts: [String] = []
+        if f.contains(.command) { parts.append("Mod") }
+        if f.contains(.control) { parts.append("Ctrl") }
+        if f.contains(.option) { parts.append("Alt") }
+        if f.contains(.shift) { parts.append("Shift") }
+        let fkeys: [UInt16: String] = [122: "F1", 120: "F2", 99: "F3", 118: "F4", 96: "F5", 97: "F6", 98: "F7", 100: "F8", 101: "F9", 109: "F10", 103: "F11", 111: "F12"]
+        let special: [UInt16: String] = [123: "Left", 124: "Right", 125: "Down", 126: "Up", 115: "Home", 119: "End", 116: "PageUp", 121: "PageDown", 36: "Enter", 48: "Tab", 51: "Backspace", 117: "Delete", 49: "Space"]
+        if let k = fkeys[e.keyCode] ?? special[e.keyCode] { parts.append(k) }
+        else if let c = e.charactersIgnoringModifiers?.uppercased(), c.count == 1 { parts.append(c) }
+        else { return nil }
+        return parts.joined(separator: "+")
     }
 
     override func keyDown(with event: NSEvent) {

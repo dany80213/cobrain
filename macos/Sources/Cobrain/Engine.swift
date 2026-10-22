@@ -138,8 +138,23 @@ final class Engine {
         return (try? JSONSerialization.jsonObject(with: Data(String(cString: out).utf8))) as? [String: Any] ?? [:]
     }
 
-    func click(page: Int, x: CGFloat, y: CGFloat) {
-        _ = cobrain_click(handle, UInt32(page), Float(x), Float(y))
+    /// Selection and Find-highlight rectangles: `(page, x, y, w, h)` in page points.
+    func selectionRects() -> (selection: [[Double]], find: [[Double]]) {
+        guard let out = cobrain_selection_rects(handle) else { return ([], []) }
+        defer { cobrain_free_string(out) }
+        let d = (try? JSONSerialization.jsonObject(with: Data(String(cString: out).utf8))) as? [String: Any] ?? [:]
+        return (d["selection"] as? [[Double]] ?? [], d["find"] as? [[Double]] ?? [])
+    }
+
+    func click(page: Int, x: CGFloat, y: CGFloat, extend: Bool = false) {
+        _ = cobrain_click_extend(handle, UInt32(page), Float(x), Float(y), extend)
+    }
+
+    /// The engine command bound to a key such as `Mod+B` (⌘B).
+    func command(forShortcut key: String) -> String? {
+        guard let out = cobrain_shortcut(handle, key) else { return nil }
+        defer { cobrain_free_string(out) }
+        return String(cString: out)
     }
 
     var caret: Caret? {

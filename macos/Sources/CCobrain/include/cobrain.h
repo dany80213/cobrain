@@ -4,6 +4,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 
 typedef struct CobrainDoc CobrainDoc;
 
@@ -20,6 +21,8 @@ uint8_t *cobrain_render_page(CobrainDoc *doc, uint32_t index, float scale, uint3
 void cobrain_free_buffer(uint8_t *ptr, size_t len);
 
 int32_t cobrain_click(CobrainDoc *doc, uint32_t page, float x, float y);
+int32_t cobrain_click_extend(CobrainDoc *doc, uint32_t page, float x, float y, bool extend);
+char *cobrain_shortcut(CobrainDoc *doc, const char *key);
 int32_t cobrain_caret(CobrainDoc *doc, uint32_t *page, float *x, float *top, float *height);
 
 char *cobrain_commands(CobrainDoc *doc);
@@ -32,6 +35,7 @@ char *cobrain_gallery_styles(CobrainDoc *doc);
 uint8_t *cobrain_style_preview(CobrainDoc *doc, const char *id, float w, float h, float scale, uint32_t *out_w, uint32_t *out_h);
 char *cobrain_take_ui_requests(CobrainDoc *doc);
 char *cobrain_para_state(CobrainDoc *doc);
+char *cobrain_selection_rects(CobrainDoc *doc);
 char *cobrain_run(CobrainDoc *doc, const char *id, const char *params_json);
 void cobrain_free_string(char *s);
 
