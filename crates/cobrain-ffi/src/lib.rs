@@ -334,6 +334,77 @@ pub unsafe extern "C" fn cobrain_theme_colors(doc: *mut CobrainDoc) -> *mut c_ch
     .unwrap_or(std::ptr::null_mut())
 }
 
+/// Styles of the Styles gallery in gallery order: JSON `[{"id","name"}]`. Free with
+/// `cobrain_free_string`.
+///
+/// # Safety
+/// `doc` must come from this library.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_gallery_styles(doc: *mut CobrainDoc) -> *mut c_char {
+    guard(|| {
+        // SAFETY: caller contract.
+        let doc = unsafe { doc.as_mut()? };
+        let v: Vec<serde_json::Value> =
+            doc.session.doc.styles.gallery().iter().map(|s| serde_json::json!({ "id": s.id, "name": s.name })).collect();
+        Some(to_cstring(serde_json::Value::Array(v).to_string()))
+    })
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// Rasterise the "AaBbCcDd" sample of style `id` (`w` x `h` points at `scale` px/pt) to straight
+/// RGBA8, like the Styles gallery tiles. Free with `cobrain_free_buffer(ptr, w*h*4)`.
+///
+/// # Safety
+/// `doc` must come from this library; `id` a valid NUL-terminated string; out pointers valid.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_style_preview(
+    doc: *mut CobrainDoc,
+    id: *const c_char,
+    w: f32,
+    h: f32,
+    scale: f32,
+    out_w: *mut u32,
+    out_h: *mut u32,
+) -> *mut u8 {
+    use std::sync::Arc;
+    use wordcraft_engine::doc::{Block, CharProps, Document, Paragraph};
+    guard(|| {
+        // SAFETY: caller contract.
+        let (doc, id) = unsafe { (doc.as_mut()?, from_cstr(id)?) };
+        let base = &doc.session.doc;
+        let mut p = Paragraph::with_text("AaBbCcDd", CharProps::default()).styled(id);
+        p.props.space_before = Some(0.0);
+        p.props.align = Some(wordcraft_engine::doc::Align::Left);
+        let first = base.styles.resolve_para(&p.props).indent_first;
+        p.props.indent_left = Some(if first.is_finite() { (-first).max(0.0) } else { 0.0 });
+        p.props.borders = None;
+        p.props.shading = None;
+        let margin = 1.0;
+        let mut d = Document::new();
+        d.styles = base.styles.clone();
+        d.numbering = base.numbering.clone();
+        d.body = vec![Arc::new(Block::Para(p))].into_iter().collect();
+        d.last_section.page_w = w + 2.0 * margin;
+        d.last_section.page_h = 2000.0;
+        d.last_section.margin_left = margin;
+        d.last_section.margin_right = margin;
+        d.last_section.margin_top = margin;
+        d.last_section.margin_bottom = 0.0;
+        let l = wordcraft_layout::layout(&d, &mut wordcraft_layout::LayoutCache::new(), &Default::default());
+        let page = l.pages.first()?;
+        let opts = RenderOptions { text_darkening: true, ..RenderOptions::default() };
+        let img = wordcraft_render::render_area(&d, page, 0.0, 0.0, w + 2.0 * margin, h + margin, scale.clamp(0.5, 4.0), &opts);
+        let pixels = img.to_straight().into_boxed_slice();
+        // SAFETY: caller contract.
+        unsafe {
+            *out_w.as_mut()? = img.width;
+            *out_h.as_mut()? = img.height;
+        }
+        Some(Box::into_raw(pixels) as *mut u8)
+    })
+    .unwrap_or(std::ptr::null_mut())
+}
+
 /// Release a string returned by this library.
 ///
 /// # Safety

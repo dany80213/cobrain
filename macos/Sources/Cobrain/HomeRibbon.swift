@@ -3,21 +3,28 @@ import SwiftUI
 /// The Home tab laid out like WordCraft's: Clipboard, Font, Paragraph, Styles, Editing.
 struct HomeRibbon: View {
     @ObservedObject var model: DocumentModel
-    let onNeedsInput: (CommandInfo) -> Void
     @State private var fontName = ""
     @State private var fontSize = ""
 
+    let selectTab: (String) -> Void
+
+    private var menus: SpecRibbon { SpecRibbon(groups: [], model: model, selectTab: selectTab) }
+
+    /// Home's groups; each folds into the menu of the same-named group in the generated spec.
+    private var columns: [RibbonColumn] {
+        let spec = SpecNode.tabs["Home"] ?? []
+        func col(_ title: String, _ v: some View, compact: AnyView? = nil) -> RibbonColumn {
+            RibbonColumn(id: title, title: title, content: AnyView(v), compact: compact, menu: spec.first { $0.title == title }.map(SpecNode.menu(of:)) ?? SpecNode(t: "menu"))
+        }
+        return [col("Clipboard", clipboardBody), col("Font", fontBody), col("Paragraph", paragraphBody), col("Styles", stylesBody, compact: AnyView(stylesGallery(width: 190))),
+                col("Editing", editingBody), col("Voice", bigButton("Dictate", "dictate", "tools.dictate")),
+                col("Editor", bigButton("Editor", "editor", "review.spelling"))]
+    }
+
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) { HStack(alignment: .top, spacing: 0) {
-            clipboard; sep
-            font; sep
-            paragraph; sep
-            styles; sep
-            editing
-        } }
-        .padding(.horizontal, 6)
-        .onChange(of: model.revision) { _ in syncFields() }
-        .onAppear { syncFields() }
+        ResponsiveRow(columns: columns, popUp: menus.popUp)
+            .onChange(of: model.revision) { _ in syncFields() }
+            .onAppear { syncFields() }
     }
 
     private func syncFields() {
@@ -90,8 +97,8 @@ struct HomeRibbon: View {
 
     private var sepV: some View { Divider().frame(height: 16).padding(.horizontal, 2) }
 
-    private var clipboard: some View {
-        group("Clipboard") {
+    private var clipboardBody: some View {
+        Group {
             HStack(alignment: .top, spacing: 6) {
                 Button { model.paste() } label: {
                     VStack(spacing: 3) { RibbonIcon(name: "paste", size: 32); Text("Paste ▾").font(.system(size: 12)) }
@@ -106,8 +113,8 @@ struct HomeRibbon: View {
         }
     }
 
-    private var font: some View {
-        group("Font") {
+    private var fontBody: some View {
+        Group {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 3) {
                     TextField("Font", text: $fontName).textFieldStyle(.roundedBorder).frame(width: 150)
@@ -141,8 +148,8 @@ struct HomeRibbon: View {
         }
     }
 
-    private var paragraph: some View {
-        group("Paragraph") {
+    private var paragraphBody: some View {
+        Group {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 1) {
                     icon("bullets", "para.bullets", help: "Bullets")
@@ -174,41 +181,39 @@ struct HomeRibbon: View {
         }
     }
 
-    private var styles: some View {
-        group("Styles") {
+    private var stylesBody: some View { stylesGallery(width: 330) }
+
+    private func stylesGallery(width: CGFloat) -> some View {
+        Group {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 4) {
                     ForEach(model.styles, id: \.id) { s in
                         let current = (model.format["style"] as? String) == s.id
                         Button { model.run("para.style", ["style": s.id]) } label: {
                             VStack(spacing: 4) {
-                                Text("AaBbCcDd").font(Self.preview(s.id)).foregroundStyle(Self.previewColor(s.id)).lineLimit(1)
-                                    .frame(height: 30)
-                                Text(s.name).font(.system(size: 11))
+                                Group {
+                                    if let img = model.stylePreview(s.id) {
+                                        Image(decorative: img, scale: 2).resizable().aspectRatio(contentMode: .fill)
+                                            .frame(width: 68, height: 32, alignment: .topLeading).clipped()
+                                    } else { Text("AaBbCcDd").frame(height: 32) }
+                                }
+                                Text(s.name).font(.system(size: 10.5)).lineLimit(1)
                             }
-                            .frame(width: 82).padding(.vertical, 6)
+                            .frame(width: 74).padding(.vertical, 4)
                             .background(current ? Color.accentColor.opacity(0.18) : Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 4))
                             .overlay(RoundedRectangle(cornerRadius: 4).stroke(current ? Color.accentColor : Color.secondary.opacity(0.3)))
                         }.buttonStyle(.plain)
                     }
                 }
-            }.frame(width: 330)
+            }.frame(width: width)
         }
     }
 
-    private var editing: some View {
-        HStack(alignment: .top, spacing: 0) {
-            group("Editing") {
-                VStack(alignment: .leading, spacing: 2) {
-                    small("Find", "find", "edit.findReplace")
-                    small("Replace", "replace", "edit.findReplace")
-                    small("Select", "select", "select.all")
-                }
-            }
-            sep
-            group("Voice") { bigButton("Dictate", "dictate", "tools.dictate") }
-            sep
-            group("Editor") { bigButton("Editor", "editor", "review.spelling") }
+    private var editingBody: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            small("Find", "find", "edit.findReplace")
+            small("Replace", "replace", "edit.findReplace")
+            small("Select", "select", "select.all")
         }
     }
 

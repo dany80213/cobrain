@@ -73,70 +73,115 @@ struct SpecNode: Decodable, Identifiable {
 }
 
 private struct GroupWidths: PreferenceKey {
-    static var defaultValue: [UUID: CGFloat] = [:]
-    static func reduce(value: inout [UUID: CGFloat], nextValue: () -> [UUID: CGFloat]) { value.merge(nextValue()) { $1 } }
+    static var defaultValue: [String: CGFloat] = [:]
+    static func reduce(value: inout [String: CGFloat], nextValue: () -> [String: CGFloat]) { value.merge(nextValue()) { $1 } }
 }
 
-struct SpecRibbon: View {
-    let groups: [SpecNode]
-    let model: DocumentModel
-    let selectTab: (String) -> Void
-    /// Natural (fully expanded) width of each group, measured once it has been drawn expanded.
-    @State private var natural: [UUID: CGFloat] = [:]
+/// One ribbon group: its expanded content, an optional shorter variant, and the menu it folds into.
+struct RibbonColumn: Identifiable {
+    let id: String
+    let title: String
+    let content: AnyView
+    var compact: AnyView? = nil
+    let menu: SpecNode
+}
+
+/// A row of groups. When it does not fit, the rightmost groups first switch to their compact
+/// variant, then fold (rightmost first) into one drop-down each, like `ribbon_fit.rs`.
+struct ResponsiveRow: View {
+    let columns: [RibbonColumn]
+    let popUp: (SpecNode) -> Void
+    /// Measured widths: `id` (full) and `id#c` (compact).
+    @State private var widths: [String: CGFloat] = [:]
     private let collapsedWidth: CGFloat = 92
 
-    /// Groups that fold into one drop-down, rightmost first, until the row fits (like `ribbon_fit.rs`).
-    private func collapsed(for avail: CGFloat) -> Set<UUID> {
-        guard groups.allSatisfy({ natural[$0.id] != nil }) else { return [] }
-        var folded = Set<UUID>()
-        func total() -> CGFloat { groups.reduce(0) { $0 + (folded.contains($1.id) ? collapsedWidth : natural[$1.id] ?? 0) } }
-        for g in groups.reversed() where total() > avail { folded.insert(g.id) }
-        return folded
+    private enum Level { case full, compact, folded }
+
+    private func plan(for avail: CGFloat) -> [String: Level] {
+        guard columns.allSatisfy({ widths[$0.id] != nil && ($0.compact == nil || widths[$0.id + "#c"] != nil) }) else { return [:] }
+        var level = Dictionary(uniqueKeysWithValues: columns.map { ($0.id, Level.full) })
+        func width(_ c: RibbonColumn) -> CGFloat {
+            switch level[c.id] ?? .full {
+            case .full: return widths[c.id] ?? 0
+            case .compact: return widths[c.id + "#c"] ?? widths[c.id] ?? 0
+            case .folded: return collapsedWidth
+            }
+        }
+        func total() -> CGFloat { columns.reduce(0) { $0 + width($1) } }
+        for c in columns.reversed() where total() > avail && c.compact != nil { level[c.id] = .compact }
+        for c in columns.reversed() where total() > avail && width(c) > collapsedWidth { level[c.id] = .folded }
+        return level
     }
 
     var body: some View {
         GeometryReader { geo in
-            let folded = collapsed(for: geo.size.width - 12)
+            let levels = plan(for: geo.size.width - 12)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .top, spacing: 0) {
-                    ForEach(groups) { g in
+                    ForEach(columns) { c in
                         Group {
-                            if folded.contains(g.id) { collapsedGroup(g) } else { fullGroup(g) }
+                            switch levels[c.id] ?? .full {
+                            case .folded: collapsedGroup(c)
+                            case .compact: fullGroup(c, compact: true)
+                            case .full: fullGroup(c, compact: false)
+                            }
                         }
                         Divider().padding(.vertical, 6)
                     }
                 }
                 .padding(.horizontal, 4)
             }
-            .onPreferenceChange(GroupWidths.self) { natural.merge($0) { $1 } }
+            .onPreferenceChange(GroupWidths.self) { widths.merge($0) { $1 } }
         }
     }
 
-    private func fullGroup(_ g: SpecNode) -> some View {
+    private func body(_ c: RibbonColumn, compact: Bool) -> some View {
         VStack(spacing: 2) {
-            HStack(alignment: .top, spacing: 4) {
-                ForEach(g.items ?? []) { node in nodeView(node) }
-            }
-            .frame(maxHeight: .infinity, alignment: .top)
-            Text(g.title ?? "").font(.system(size: 10.5)).foregroundStyle(.secondary).fixedSize()
+            (compact ? c.compact ?? c.content : c.content).frame(maxHeight: .infinity, alignment: .top)
+            Text(c.title).font(.system(size: 10.5)).foregroundStyle(.secondary).fixedSize()
         }
         .padding(.horizontal, 8).padding(.vertical, 5)
-        .background(GeometryReader { Color.clear.preference(key: GroupWidths.self, value: [g.id: $0.size.width + 1]) })
     }
 
-    /// A whole group folded into one button that opens its commands as a menu.
-    private func collapsedGroup(_ g: SpecNode) -> some View {
-        Button { popUp(SpecNode.menu(of: g)) } label: {
+    private func fullGroup(_ c: RibbonColumn, compact: Bool) -> some View {
+        body(c, compact: compact)
+            .background(GeometryReader { Color.clear.preference(key: GroupWidths.self, value: [compact ? c.id + "#c" : c.id: $0.size.width + 1]) })
+            // The variant that is not on screen is measured invisibly so the plan knows both widths.
+            .overlay(alignment: .topLeading) {
+                if c.compact != nil {
+                    body(c, compact: !compact).fixedSize().hidden()
+                        .background(GeometryReader { Color.clear.preference(key: GroupWidths.self, value: [!compact ? c.id + "#c" : c.id: $0.size.width + 1]) })
+                        .allowsHitTesting(false)
+                }
+            }
+    }
+
+    private func collapsedGroup(_ c: RibbonColumn) -> some View {
+        Button { popUp(c.menu) } label: {
             VStack(spacing: 3) {
                 Image(systemName: "ellipsis").font(.system(size: 18, weight: .bold)).frame(width: 32, height: 32)
-                Text((g.title ?? "") + " ▾").font(.system(size: 12)).fixedSize()
+                Text(c.title + " ▾").font(.system(size: 12)).fixedSize()
             }
             .frame(width: collapsedWidth - 16).contentShape(Rectangle())
         }
         .buttonStyle(.plain).padding(.horizontal, 8).padding(.vertical, 5)
     }
+}
 
-    private func run(_ n: SpecNode) {
+struct SpecRibbon: View {
+    let groups: [SpecNode]
+    let model: DocumentModel
+    let selectTab: (String) -> Void
+
+    var body: some View {
+        ResponsiveRow(columns: groups.map { g in
+            RibbonColumn(id: g.title ?? "", title: g.title ?? "",
+                         content: AnyView(HStack(alignment: .top, spacing: 4) { ForEach(g.items ?? []) { nodeView($0) } }),
+                         menu: SpecNode.menu(of: g))
+        }, popUp: popUp)
+    }
+
+    func run(_ n: SpecNode) {
         guard let cmd = n.cmd, !cmd.isEmpty else { return }
         let params = (n.params?.data(using: .utf8)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
         if cmd == "ui.tab", let tab = params["tab"] as? String { selectTab(tab); return }
@@ -167,7 +212,7 @@ struct SpecRibbon: View {
     }
 
     /// Shows the menu as a native NSMenu under the mouse.
-    private func popUp(_ n: SpecNode) {
+    func popUp(_ n: SpecNode) {
         let menu = NSMenu()
         build(menu, n.items ?? [])
         MenuWidget.active = menu

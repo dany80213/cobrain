@@ -107,6 +107,25 @@ final class Engine {
         return (try? JSONSerialization.jsonObject(with: Data(String(cString: out).utf8))) as? [String] ?? []
     }
 
+    func galleryStyles() -> [(id: String, name: String)] {
+        guard let out = cobrain_gallery_styles(handle) else { return [] }
+        defer { cobrain_free_string(out) }
+        let raw = (try? JSONSerialization.jsonObject(with: Data(String(cString: out).utf8))) as? [[String: String]] ?? []
+        return raw.compactMap { d in d["id"].flatMap { id in d["name"].map { (id, $0) } } }
+    }
+
+    /// The "AaBbCcDd" sample of a style, as the Styles gallery tile shows it.
+    func stylePreview(_ id: String, width: CGFloat, height: CGFloat, scale: CGFloat) -> CGImage? {
+        var w: UInt32 = 0, h: UInt32 = 0
+        guard let ptr = cobrain_style_preview(handle, id, Float(width), Float(height), Float(scale), &w, &h) else { return nil }
+        let len = Int(w) * Int(h) * 4
+        defer { cobrain_free_buffer(ptr, len) }
+        guard let provider = CGDataProvider(data: Data(bytes: ptr, count: len) as CFData) else { return nil }
+        return CGImage(width: Int(w), height: Int(h), bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: Int(w) * 4,
+                       space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue),
+                       provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+    }
+
     func click(page: Int, x: CGFloat, y: CGFloat) {
         _ = cobrain_click(handle, UInt32(page), Float(x), Float(y))
     }

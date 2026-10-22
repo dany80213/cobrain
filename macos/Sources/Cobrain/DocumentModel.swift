@@ -31,10 +31,7 @@ final class DocumentModel: ObservableObject {
     /// Re-read the state the chrome shows (formatting at the caret, styles, headings).
     func refresh() {
         if case .success(let f) = engine.run("format.state"), let d = f as? [String: Any] { format = d }
-        if styles.isEmpty, case .success(let l) = engine.run("styles.list"), let arr = l as? [[String: Any]] {
-            styles = arr.filter { ($0["kind"] as? String) == "paragraph" && ($0["quick"] as? Bool) == true }
-                .compactMap { d in (d["id"] as? String).flatMap { id in (d["name"] as? String).map { (id, $0) } } }
-        }
+        if styles.isEmpty { styles = engine.galleryStyles() }
         headings = engine.outline()
         if themeColors.isEmpty { themeColors = engine.themeColors() }
         contextualTabs = engine.contextualTabs()
@@ -43,6 +40,16 @@ final class DocumentModel: ObservableObject {
         if case .success(let i) = engine.run("file.info"), let d = i as? [String: Any] { wordCount = d["words"] as? Int ?? 0 }
         if let c = engine.caret { caretPage = c.page }
         if let p = engine.pageSize(0) { pageWidth = p.width }
+    }
+
+    private var previewCache: [String: CGImage] = [:]
+
+    func stylePreview(_ id: String) -> CGImage? {
+        let key = "\(id)#\(revision)"
+        if let c = previewCache[key] { return c }
+        let img = engine.stylePreview(id, width: 220, height: 30, scale: 2)
+        if let img { previewCache = previewCache.filter { $0.key.hasSuffix("#\(revision)") }; previewCache[key] = img }
+        return img
     }
 
     func isOn(_ key: String) -> Bool { (format[key] as? Bool) == true }

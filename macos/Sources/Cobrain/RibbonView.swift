@@ -47,7 +47,7 @@ struct RibbonView: View {
             Divider()
             Group {
                 if shownTab == "Home" {
-                    HomeRibbon(model: model) { pending = $0 }
+                    HomeRibbon(model: model, selectTab: { tab = $0 })
                 } else if let spec = SpecNode.tabs[shownTab], !spec.isEmpty {
                     SpecRibbon(groups: spec, model: model) { tab = $0 }
                 } else {
