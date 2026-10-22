@@ -15,7 +15,11 @@ import SwiftUI
     }
     let W = CGFloat(Double(ProcessInfo.processInfo.environment["COBRAIN_WIDTH"] ?? "") ?? 1100)
     let host: NSHostingView<AnyView>
-    if ProcessInfo.processInfo.environment["COBRAIN_WIDGET"] != nil {
+    if let d = ProcessInfo.processInfo.environment["COBRAIN_DIALOG"] {
+        let kind: DialogKind = ["font": .font, "paragraph": .paragraph, "pageSetup": .pageSetup, "find": .findReplace, "symbol": .symbol,
+                                "insertTable": .insertTable, "link": .link][d] ?? .zoom
+        host = NSHostingView(rootView: AnyView(DialogView(kind: kind, model: model).background(Color(nsColor: .windowBackgroundColor)).frame(width: W, height: 760, alignment: .topLeading)))
+    } else if ProcessInfo.processInfo.environment["COBRAIN_WIDGET"] != nil {
         host = NSHostingView(rootView: AnyView(HStack(alignment: .top, spacing: 12) {
             TableGridView { _, _ in }
             ColorGridView(theme: model.themeColors, pick: { _ in }, more: {})

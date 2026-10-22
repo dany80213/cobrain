@@ -405,6 +405,40 @@ pub unsafe extern "C" fn cobrain_style_preview(
     .unwrap_or(std::ptr::null_mut())
 }
 
+/// Requests the engine made of the UI since the last call (`{"open": "font"}`, `{"scrollTo":
+/// "caret"}`…), as a JSON array; the queue is emptied. Free with `cobrain_free_string`.
+///
+/// # Safety
+/// `doc` must come from this library.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_take_ui_requests(doc: *mut CobrainDoc) -> *mut c_char {
+    guard(|| {
+        // SAFETY: caller contract.
+        let doc = unsafe { doc.as_mut()? };
+        let reqs = std::mem::take(&mut doc.session.ui_requests);
+        Some(to_cstring(serde_json::Value::Array(reqs).to_string()))
+    })
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// Resolved formatting of the paragraph at the caret (alignment, indents, spacing…) as JSON.
+/// Free with `cobrain_free_string`.
+///
+/// # Safety
+/// `doc` must come from this library.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_para_state(doc: *mut CobrainDoc) -> *mut c_char {
+    guard(|| {
+        // SAFETY: caller contract.
+        let doc = unsafe { doc.as_mut()? };
+        let focus = doc.session.sel_ends().focus.clone();
+        let p = doc.session.doc.para_at(&focus)?;
+        let r = doc.session.doc.styles.resolve_para(&p.props);
+        Some(to_cstring(serde_json::to_string(&r).ok()?))
+    })
+    .unwrap_or(std::ptr::null_mut())
+}
+
 /// Release a string returned by this library.
 ///
 /// # Safety

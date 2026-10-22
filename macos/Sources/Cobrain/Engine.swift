@@ -126,6 +126,18 @@ final class Engine {
                        provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
     }
 
+    func takeUIRequests() -> [[String: Any]] {
+        guard let out = cobrain_take_ui_requests(handle) else { return [] }
+        defer { cobrain_free_string(out) }
+        return (try? JSONSerialization.jsonObject(with: Data(String(cString: out).utf8))) as? [[String: Any]] ?? []
+    }
+
+    func paraState() -> [String: Any] {
+        guard let out = cobrain_para_state(handle) else { return [:] }
+        defer { cobrain_free_string(out) }
+        return (try? JSONSerialization.jsonObject(with: Data(String(cString: out).utf8))) as? [String: Any] ?? [:]
+    }
+
     func click(page: Int, x: CGFloat, y: CGFloat) {
         _ = cobrain_click(handle, UInt32(page), Float(x), Float(y))
     }

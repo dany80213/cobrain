@@ -15,6 +15,7 @@ struct ContentView: View {
             }
         }
             .navigationTitle(model.title)
+            .sheet(item: $model.dialog) { DialogView(kind: $0, model: model) }
             .safeAreaInset(edge: .bottom, spacing: 0) { StatusBar(model: model) }
             .toolbar {
                 ToolbarItemGroup(placement: .navigation) {

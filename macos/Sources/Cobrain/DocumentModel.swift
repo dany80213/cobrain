@@ -9,6 +9,8 @@ final class DocumentModel: ObservableObject {
     @Published var fileURL: URL?
     @Published var zoom: CGFloat = 1.0
     @Published var lastError: String?
+    @Published var dialog: DialogKind?
+    @Published private(set) var scrollToCaret = 0
     private(set) lazy var catalog: [CommandInfo] = engine.commands()
 
     @Published private(set) var format: [String: Any] = [:]
@@ -73,8 +75,39 @@ final class DocumentModel: ObservableObject {
             handleClipboard(id, r)
         case .failure(let e): lastError = e.message
         }
+        handleUIRequests()
         refresh()
         revision += 1
+    }
+
+    /// The engine asks the UI for things (open a dialog, a file panel, scroll to the caret).
+    private func handleUIRequests() {
+        for r in engine.takeUIRequests() {
+            if r["scrollTo"] != nil { scrollToCaret += 1; continue }
+            guard let open = r["open"] as? String else { continue }
+            switch open {
+            case "font": dialog = .font
+            case "paragraph": dialog = .paragraph
+            case "pageSetup": dialog = .pageSetup
+            case "link": dialog = .link
+            case "goto": dialog = .goTo
+            case "find": dialog = .findReplace
+            case "zoom": dialog = .zoom
+            case "saveAs": saveAs()
+            case "openFile": self.open()
+            case "exportPdf": exportPDF()
+            case "commands": dialog = .commandSearch
+            default: dialog = .unavailable(open)
+            }
+        }
+    }
+
+    func exportPDF() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.pdf]
+        panel.nameFieldStringValue = (fileURL?.deletingPathExtension().lastPathComponent ?? "Untitled") + ".pdf"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        write(to: url)
     }
 
     /// Cut/Copy put the engine's clipboard payload on the system pasteboard; Paste feeds it back.
@@ -139,7 +172,7 @@ final class DocumentModel: ObservableObject {
         if url.pathExtension.lowercased() != "pdf" { fileURL = url }
     }
 
-    private func write(to url: URL) {
+    func write(to url: URL) {
         lastError = engine.save(to: url.path) ? nil : "Could not save \(url.lastPathComponent)"
         objectWillChange.send()
     }

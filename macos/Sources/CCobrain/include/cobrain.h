@@ -30,6 +30,8 @@ char *cobrain_contextual_tabs(CobrainDoc *doc);
 char *cobrain_theme_colors(CobrainDoc *doc);
 char *cobrain_gallery_styles(CobrainDoc *doc);
 uint8_t *cobrain_style_preview(CobrainDoc *doc, const char *id, float w, float h, float scale, uint32_t *out_w, uint32_t *out_h);
+char *cobrain_take_ui_requests(CobrainDoc *doc);
+char *cobrain_para_state(CobrainDoc *doc);
 char *cobrain_run(CobrainDoc *doc, const char *id, const char *params_json);
 void cobrain_free_string(char *s);
 
