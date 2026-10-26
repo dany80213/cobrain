@@ -90,6 +90,7 @@ pub unsafe extern "C" fn cobrain_save(doc: *mut CobrainDoc, path: *const c_char)
         let (doc, path) = unsafe { (doc.as_mut()?, from_cstr(path)?) };
         wordcraft_engine::io::save_path(Path::new(path), &doc.session.doc).ok()?;
         doc.session.stamp_save();
+        doc.session.dirty = false;
         Some(0)
     })
     .unwrap_or(-1)
@@ -105,6 +106,20 @@ pub unsafe extern "C" fn cobrain_free(doc: *mut CobrainDoc) {
         // SAFETY: caller contract.
         drop(unsafe { Box::from_raw(doc) });
     }
+}
+
+/// Whether the document has edits since it was opened or last saved (false on failure).
+///
+/// # Safety
+/// `doc` must come from this library.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_is_dirty(doc: *mut CobrainDoc) -> bool {
+    guard(|| {
+        // SAFETY: caller contract.
+        let doc = unsafe { doc.as_mut()? };
+        Some(doc.session.dirty)
+    })
+    .unwrap_or(false)
 }
 
 /// Number of laid-out pages (0 on failure).
@@ -231,10 +246,10 @@ pub unsafe extern "C" fn cobrain_outline(doc: *mut CobrainDoc) -> *mut c_char {
         let mut out = Vec::new();
         for (i, block) in doc.session.doc.body.iter().enumerate() {
             let level = levels.get(i).copied().unwrap_or(10);
-            if let wordcraft_engine::doc::Block::Para(p) = &**block {
-                if level < 10 {
-                    out.push(serde_json::json!({ "level": level, "text": p.plain_text(), "block": i }));
-                }
+            if let wordcraft_engine::doc::Block::Para(p) = &**block
+                && level < 10
+            {
+                out.push(serde_json::json!({ "level": level, "text": p.plain_text(), "block": i }));
             }
         }
         Some(to_cstring(serde_json::Value::Array(out).to_string()))
@@ -348,8 +363,7 @@ pub unsafe extern "C" fn cobrain_gallery_styles(doc: *mut CobrainDoc) -> *mut c_
     guard(|| {
         // SAFETY: caller contract.
         let doc = unsafe { doc.as_mut()? };
-        let v: Vec<serde_json::Value> =
-            doc.session.doc.styles.gallery().iter().map(|s| serde_json::json!({ "id": s.id, "name": s.name })).collect();
+        let v: Vec<serde_json::Value> = doc.session.doc.styles.gallery().iter().map(|s| serde_json::json!({ "id": s.id, "name": s.name })).collect();
         Some(to_cstring(serde_json::Value::Array(v).to_string()))
     })
     .unwrap_or(std::ptr::null_mut())
@@ -651,4 +665,3 @@ mod tests {
         }
     }
 }
-

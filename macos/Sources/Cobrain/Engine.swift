@@ -34,6 +34,9 @@ final class Engine {
 
     func save(to path: String) -> Bool { cobrain_save(handle, path) == 0 }
 
+    /// Edited since it was opened or last saved.
+    var isDirty: Bool { cobrain_is_dirty(handle) }
+
     var pageCount: Int { Int(cobrain_page_count(handle)) }
 
     func pageSize(_ index: Int) -> Page? {

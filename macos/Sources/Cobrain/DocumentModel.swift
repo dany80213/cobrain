@@ -28,10 +28,62 @@ final class DocumentModel: ObservableObject {
     @Published private(set) var caretPage = 0
     @Published private(set) var pageWidth: CGFloat = 612
     @Published var navigationVisible = true
+    @Published var projectsVisible = !ProjectStore.shared.projects.isEmpty
+    /// Modification date of `fileURL` when we last read or wrote it: a newer one means someone else
+    /// (a classmate on a shared iCloud project) saved the file.
+    private var diskDate: Date?
+    private var diskWatch: Timer?
 
     init() {
         engine = Engine(sample: true)!
         refresh()
+        diskWatch = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in self?.reloadIfChangedOnDisk() }
+    }
+
+    private func modificationDate(_ url: URL) -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+    }
+
+    private func changedOnDisk(_ url: URL) -> Bool {
+        guard let known = diskDate, let now = modificationDate(url) else { return false }
+        return now.timeIntervalSince(known) > 0.5
+    }
+
+    /// Someone else saved the open file: show their version, unless there are edits here
+    /// (then saving asks what to do, see `write(to:)`).
+    private func reloadIfChangedOnDisk() {
+        guard let url = fileURL, changedOnDisk(url), !engine.isDirty, let e = Engine(path: url.path) else { return }
+        engine = e
+        diskDate = modificationDate(url)
+        refresh()
+        revision += 1
+    }
+
+    /// Opens `url` in this window, first saving the current document when it belongs to the open
+    /// project, or asking when it is somewhere else or untitled. Does nothing if the user cancels.
+    func openReplacingCurrent(_ url: URL) {
+        guard url != fileURL else { return }
+        if engine.isDirty {
+            if let current = fileURL, let project = ProjectStore.shared.current, current.path.hasPrefix(project.path + "/") {
+                write(to: current)
+                if engine.isDirty { return }
+            } else {
+                let alert = NSAlert()
+                alert.messageText = "Save changes to “\(title)”?"
+                alert.informativeText = "Your changes are lost if you don’t save them."
+                alert.addButton(withTitle: "Save")
+                alert.addButton(withTitle: "Don’t Save")
+                alert.addButton(withTitle: "Cancel")
+                switch alert.runModal() {
+                case .alertFirstButtonReturn:
+                    save()
+                    if engine.isDirty { return }
+                case .alertSecondButtonReturn: break
+                default: return
+                }
+            }
+        }
+        open(url)
     }
 
     /// Re-read the state the chrome shows (formatting at the caret, styles, headings).
@@ -173,6 +225,7 @@ final class DocumentModel: ObservableObject {
         guard let e = Engine() else { return }
         engine = e
         fileURL = nil
+        diskDate = nil
         refresh()
         revision += 1
     }
@@ -191,6 +244,7 @@ final class DocumentModel: ObservableObject {
         }
         engine = e
         fileURL = url
+        diskDate = modificationDate(url)
         lastError = nil
         NSDocumentController.shared.noteNewRecentDocumentURL(url)
         refresh()
@@ -211,7 +265,28 @@ final class DocumentModel: ObservableObject {
     }
 
     func write(to url: URL) {
+        var url = url
+        if url == fileURL, changedOnDisk(url) {
+            // Shared project: a classmate saved this file since we opened it. Never overwrite their work silently.
+            let alert = NSAlert()
+            alert.messageText = "“\(url.lastPathComponent)” was changed by someone else"
+            alert.informativeText = "Someone saved a newer version while you were editing. Save yours as a separate copy to keep both."
+            alert.addButton(withTitle: "Save as Copy")
+            alert.addButton(withTitle: "Replace Their Version")
+            alert.addButton(withTitle: "Cancel")
+            switch alert.runModal() {
+            case .alertFirstButtonReturn:
+                let stamp = DateFormatter()
+                stamp.dateFormat = "yyyy-MM-dd HH.mm"
+                let name = "\(url.deletingPathExtension().lastPathComponent) (my copy \(stamp.string(from: Date())))"
+                url = url.deletingLastPathComponent().appendingPathComponent(name).appendingPathExtension(url.pathExtension)
+                fileURL = url
+            case .alertSecondButtonReturn: break
+            default: return
+            }
+        }
         lastError = engine.save(to: url.path) ? nil : "Could not save \(url.lastPathComponent)"
+        if url == fileURL { diskDate = modificationDate(url) }
         objectWillChange.send()
     }
 }
