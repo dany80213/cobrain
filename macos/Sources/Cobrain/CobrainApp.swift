@@ -6,6 +6,24 @@ import SwiftUI
     let args = CommandLine.arguments
     guard let i = args.firstIndex(of: "--snapshot"), args.indices.contains(i + 1) else { return }
     _ = NSApplication.shared
+    if let path = ProcessInfo.processInfo.environment["COBRAIN_BOARD"] {
+        let board = BoardModel()
+        board.viewSize = CGSize(width: 1048, height: 700)
+        board.open(URL(fileURLWithPath: path))
+        board.selection = Set(board.elements.prefix(1).map(\.id))
+        let host = NSHostingView(rootView: BoardRoot(preview: board).frame(width: 1100, height: 760))
+        host.frame = NSRect(x: 0, y: 0, width: 1100, height: 760)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        host.layoutSubtreeIfNeeded()
+        if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+            host.cacheDisplay(in: host.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: args[i + 1]))
+        }
+        exit(0)
+    }
     let model = DocumentModel()
     if args.indices.contains(i + 2) { model.open(URL(fileURLWithPath: args[i + 2])) }
     if ProcessInfo.processInfo.environment["COBRAIN_BACKSTAGE"] != nil { model.showBackstage = true }
@@ -63,27 +81,33 @@ struct CobrainApp: App {
     var body: some Scene {
         WindowGroup(id: "document") { WindowRoot(url: nil) }
         .commands { CobrainCommands() }
+        WindowGroup("Whiteboard", id: "whiteboard") { BoardRoot() }
     }
 }
 
 struct CobrainCommands: Commands {
     @FocusedObject private var model: DocumentModel?
+    @FocusedObject private var board: BoardModel?
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
             Button("New") { openWindow(id: "document") }.keyboardShortcut("n")
-            Button("Open…") { model?.open() }.keyboardShortcut("o")
+            Button("New Whiteboard") { openWindow(id: "whiteboard") }.keyboardShortcut("n", modifiers: [.command, .option])
+            Button("Open…") { if let board { board.open() } else { model?.open() } }.keyboardShortcut("o")
             Button("Print…") { model?.printDocument() }.keyboardShortcut("p")
             Button("Export as PDF…") { model?.exportPDF() }
         }
         CommandGroup(replacing: .saveItem) {
-            Button("Save") { model?.save() }.keyboardShortcut("s")
-            Button("Save As…") { model?.saveAs() }.keyboardShortcut("s", modifiers: [.command, .shift])
+            Button("Save") { if let board { board.save() } else { model?.save() } }.keyboardShortcut("s")
+            Button("Save As…") { if let board { board.saveAs() } else { model?.saveAs() } }.keyboardShortcut("s", modifiers: [.command, .shift])
         }
         CommandGroup(replacing: .undoRedo) {
-            Button("Undo") { model?.run("edit.undo") }.keyboardShortcut("z")
-            Button("Redo") { model?.run("edit.redo") }.keyboardShortcut("z", modifiers: [.command, .shift])
+            Button("Undo") { if let board { board.undo() } else { model?.run("edit.undo") } }.keyboardShortcut("z")
+            Button("Redo") { if let board { board.redo() } else { model?.run("edit.redo") } }.keyboardShortcut("z", modifiers: [.command, .shift])
+        }
+        CommandGroup(after: .pasteboard) {
+            Button("Duplicate") { board?.duplicateSelection() }.keyboardShortcut("d").disabled(board == nil)
         }
         CommandMenu("Format") {
             Button("Bold") { model?.run("format.bold") }.keyboardShortcut("b")
