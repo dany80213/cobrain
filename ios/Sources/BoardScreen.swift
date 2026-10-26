@@ -19,6 +19,8 @@ struct BoardScreen: View {
                 if let d = try? Data(contentsOf: url) { try? board.load(d) }
                 board.fitContent()
                 board.fileURL = url
+                // The Pencil should draw as soon as the board opens, not select.
+                board.tool = .pen
             }
             .onChange(of: board.dirty) { _, d in if d { scheduleSave() } }
             .onChange(of: board.elements) { _, _ in scheduleSave() }
