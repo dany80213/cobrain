@@ -61,10 +61,10 @@ struct TitleActions: View {
 /// File tab: the full-window "backstage" with document actions and info.
 struct BackstageView: View {
     @ObservedObject var model: DocumentModel
-    @State private var page = "Info"
+    @State private var page = "Home"
     @State private var info: [(String, String)] = []
 
-    private let items: [(String, String)] = [("Info", "info.circle"), ("New", "doc.badge.plus"), ("Open", "folder"), ("Save", "square.and.arrow.down"),
+    private let items: [(String, String)] = [("Home", "house"), ("Info", "info.circle"), ("New", "doc.badge.plus"), ("Open", "folder"), ("Save", "square.and.arrow.down"),
                                              ("Save As", "square.and.arrow.down.on.square"), ("Export PDF", "doc.richtext"), ("Print", "printer")]
 
     var body: some View {
@@ -82,12 +82,16 @@ struct BackstageView: View {
             }
             .padding(16).frame(width: 220).background(Color.accentColor.opacity(0.08))
             VStack(alignment: .leading, spacing: 14) {
-                Text(page).font(.title.weight(.semibold))
-                Text(model.title).font(.title3)
-                if let url = model.fileURL { Text(url.path).foregroundStyle(.secondary).font(.caption) }
-                Divider()
-                ForEach(info, id: \.0) { r in HStack { Text(r.0).frame(width: 140, alignment: .leading); Text(r.1).foregroundStyle(.secondary) } }
-                Spacer()
+                if page == "Home" {
+                    HomePage(model: model)
+                } else {
+                    Text(page).font(.title.weight(.semibold))
+                    Text(model.title).font(.title3)
+                    if let url = model.fileURL { Text(url.path).foregroundStyle(.secondary).font(.caption) }
+                    Divider()
+                    ForEach(info, id: \.0) { r in HStack { Text(r.0).frame(width: 140, alignment: .leading); Text(r.1).foregroundStyle(.secondary) } }
+                    Spacer()
+                }
             }
             .padding(30).frame(maxWidth: .infinity, alignment: .topLeading)
         }

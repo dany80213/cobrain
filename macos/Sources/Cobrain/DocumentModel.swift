@@ -12,6 +12,8 @@ final class DocumentModel: ObservableObject {
     @Published var lastError: String?
     @Published var dialog: DialogKind?
     @Published var showBackstage = false
+    /// A file was opened in this window (the Home page is shown only until then).
+    private(set) var opened = false
     @Published var autosave = false
     private var autosaveWork: DispatchWorkItem?
     @Published private(set) var scrollToCaret = 0
@@ -221,8 +223,9 @@ final class DocumentModel: ObservableObject {
         revision += 1
     }
 
-    func newDocument() {
+    func newDocument(template: String = "blank") {
         guard let e = Engine() else { return }
+        if template != "blank" { _ = e.run("file.new", ["template": template]) }
         engine = e
         fileURL = nil
         diskDate = nil
@@ -244,6 +247,8 @@ final class DocumentModel: ObservableObject {
         }
         engine = e
         fileURL = url
+        opened = true
+        showBackstage = false
         diskDate = modificationDate(url)
         lastError = nil
         NSDocumentController.shared.noteNewRecentDocumentURL(url)

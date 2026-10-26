@@ -52,7 +52,7 @@ struct WindowRoot: View {
             .frame(minWidth: 640, minHeight: 480)
             .focusedSceneObject(model)
             .onOpenURL { model.open($0) }
-            .onAppear { if let url { model.open(url) } }
+            .onAppear { if let url { model.open(url) } else if !model.opened { model.showBackstage = true } }
     }
 }
 
