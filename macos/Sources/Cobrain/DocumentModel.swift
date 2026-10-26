@@ -132,6 +132,14 @@ final class DocumentModel: ObservableObject {
         return NSApp.runModal(for: panel)
     }
 
+    /// Asks where to save a PDF, as a sheet on this window; `nil` if cancelled.
+    func askPDFDestination(suggestedName: String) -> URL? {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.pdf]
+        panel.nameFieldStringValue = suggestedName
+        return runSheet(panel) == .OK ? panel.url : nil
+    }
+
     private func updateEditedMark() {
         window?.isDocumentEdited = engine.isDirty
         window?.representedURL = fileURL
