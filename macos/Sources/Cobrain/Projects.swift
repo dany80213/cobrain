@@ -123,6 +123,11 @@ final class ProjectStore: ObservableObject {
         if current == url { current = projects.first } else { persist() }
     }
 
+    /// Whether `url` is inside one of the projects.
+    func contains(_ url: URL) -> Bool {
+        projects.contains { url.standardizedFileURL.path.hasPrefix($0.standardizedFileURL.path + "/") }
+    }
+
     func isInICloud(_ url: URL) -> Bool {
         guard let cloud = Self.iCloudDrive else { return false }
         return url.standardizedFileURL.path.hasPrefix(cloud.standardizedFileURL.path + "/")
