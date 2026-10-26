@@ -179,7 +179,7 @@ final class BoardModel: ObservableObject {
     @Published var pan: CGSize = .zero
     @Published var editing: UUID?
     @Published var fileURL: URL?
-    @Published var dirty = false
+    @Published var dirty = false { didSet { window?.isDocumentEdited = dirty } }
     @Published private(set) var canUndo = false
     @Published private(set) var canRedo = false
     @Published var fill: BoardColor = .hex(0x7C6CF0)
@@ -188,6 +188,7 @@ final class BoardModel: ObservableObject {
     @Published var fontSize = 20.0
     var viewSize = CGSize(width: 800, height: 600)
 
+    private var dirtyBeforeSnapshot = false
     private var undoStack: [[BoardElement]] = []
     private var redoStack: [[BoardElement]] = []
     private var lastCoalesce: (key: String, at: Date)?
@@ -216,11 +217,17 @@ final class BoardModel: ObservableObject {
     func snapshot(coalesce key: String? = nil) {
         if let key, let l = lastCoalesce, l.key == key, Date().timeIntervalSince(l.at) < 1 { lastCoalesce = (key, Date()); return }
         lastCoalesce = key.map { ($0, Date()) }
+        dirtyBeforeSnapshot = dirty
         undoStack.append(elements)
         if undoStack.count > 200 { undoStack.removeFirst() }
         redoStack = []
         dirty = true
         syncUndo()
+    }
+    /// A click that changed nothing (select, a stray drag) is not an edit: take back its undo step.
+    func dropEmptySnapshot() {
+        guard let last = undoStack.last, last == elements else { return }
+        undoStack.removeLast(); lastCoalesce = nil; dirty = dirtyBeforeSnapshot; syncUndo()
     }
     private func syncUndo() { canUndo = !undoStack.isEmpty; canRedo = !redoStack.isEmpty }
     func undo() {
@@ -274,6 +281,7 @@ final class BoardModel: ObservableObject {
         editing = nil
         if let e = element(id), e.kind == .text, e.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             elements.removeAll { $0.id == id }; selection.remove(id)
+            dropEmptySnapshot()
         }
     }
 
@@ -320,6 +328,56 @@ final class BoardModel: ObservableObject {
         for id in selection { fitText(id) }
     }
 
+    // MARK: Window
+    private static var all = NSHashTable<BoardModel>.weakObjects()
+    static var openBoards: [BoardModel] { all.allObjects }
+    private(set) weak var window: NSWindow?
+    private var closeGuard: WindowCloseGuard?
+
+    /// Once the SwiftUI window exists: ask before it closes with unsaved edits, show the edited dot.
+    func attach(to window: NSWindow) {
+        guard self.window !== window else { return }
+        self.window = window
+        Self.all.add(self)
+        let guardian = WindowCloseGuard(confirm: { [weak self] in self?.confirmDiscardingChanges() ?? true }, original: window.delegate)
+        closeGuard = guardian
+        window.delegate = guardian
+        window.isDocumentEdited = dirty
+        window.representedURL = fileURL
+    }
+
+    /// Before the board goes away (window closed, app quit, another file opened): Save / Don't Save / Cancel
+    /// when it has edits. False when the user cancelled or saving failed.
+    func confirmDiscardingChanges() -> Bool {
+        endEditing()
+        guard dirty else { return true }
+        let alert = NSAlert()
+        alert.messageText = "Do you want to save the changes you made to “\(fileURL?.deletingPathExtension().lastPathComponent ?? "Untitled whiteboard")”?"
+        alert.informativeText = "Your changes will be lost if you don’t save them."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Don’t Save")
+        alert.addButton(withTitle: "Cancel")
+        switch runSheet(alert) {
+        case .alertFirstButtonReturn: save(); return !dirty
+        case .alertSecondButtonReturn: return true
+        default: return false
+        }
+    }
+
+    // Sheets on the board's window: a free-standing modal opens on another Space when the window is full screen.
+    private func runSheet(_ alert: NSAlert) -> NSApplication.ModalResponse {
+        guard let window, window.isVisible, window.attachedSheet == nil else { return alert.runModal() }
+        window.makeKeyAndOrderFront(nil)
+        alert.beginSheetModal(for: window) { NSApp.stopModal(withCode: $0) }
+        return NSApp.runModal(for: alert.window)
+    }
+    private func runSheet(_ panel: NSSavePanel) -> NSApplication.ModalResponse {
+        guard let window, window.isVisible, window.attachedSheet == nil else { return panel.runModal() }
+        window.makeKeyAndOrderFront(nil)
+        panel.beginSheetModal(for: window) { NSApp.stopModal(withCode: $0) }
+        return NSApp.runModal(for: panel)
+    }
+
     // MARK: Files
     func save() { if let url = fileURL { write(to: url) } else { saveAs() } }
 
@@ -327,7 +385,7 @@ final class BoardModel: ObservableObject {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.init(filenameExtension: "cobrainboard")].compactMap { $0 }
         panel.nameFieldStringValue = (fileURL?.lastPathComponent ?? "Untitled.cobrainboard")
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard runSheet(panel) == .OK, let url = panel.url else { return }
         write(to: url)
     }
 
@@ -336,7 +394,7 @@ final class BoardModel: ObservableObject {
             let enc = JSONEncoder()
             enc.outputFormatting = [.prettyPrinted, .sortedKeys]
             try enc.encode(BoardFile(elements: elements)).write(to: url, options: .atomic)
-            fileURL = url; dirty = false
+            fileURL = url; dirty = false; window?.representedURL = url
         } catch {
             let a = NSAlert(); a.messageText = "Could not save \(url.lastPathComponent)"; a.informativeText = error.localizedDescription; a.runModal()
         }
@@ -345,7 +403,7 @@ final class BoardModel: ObservableObject {
     func open() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.init(filenameExtension: "cobrainboard")].compactMap { $0 }
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard confirmDiscardingChanges(), runSheet(panel) == .OK, let url = panel.url else { return }
         open(url)
     }
 

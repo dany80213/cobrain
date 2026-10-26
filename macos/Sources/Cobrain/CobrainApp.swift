@@ -94,6 +94,7 @@ struct WindowAccessor: NSViewRepresentable {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         for doc in DocumentModel.openDocuments where !doc.confirmDiscardingChanges() { return .terminateCancel }
+        for board in BoardModel.openBoards where !board.confirmDiscardingChanges() { return .terminateCancel }
         return .terminateNow
     }
 }

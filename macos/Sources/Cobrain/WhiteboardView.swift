@@ -20,6 +20,7 @@ struct BoardRoot: View {
             }
         }
         .frame(minWidth: 860, minHeight: 540)
+        .background(WindowAccessor { board.attach(to: $0) })
         .navigationTitle(board.title)
         .focusedSceneObject(board)
     }
@@ -220,7 +221,7 @@ struct BoardCanvas: View {
                 if !active { active = true; begin(start, screen: v.startLocation, shift: NSEvent.modifierFlags.contains(.shift)) }
                 update(start: start, now: now, translation: v.translation)
             }
-            .onEnded { _ in end(); active = false; drag = .idle; marquee = nil }
+            .onEnded { _ in end(); board.dropEmptySnapshot(); active = false; drag = .idle; marquee = nil }
     }
 
     private func doubleClick(at loc: CGPoint) {

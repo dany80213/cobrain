@@ -109,7 +109,7 @@ final class DocumentModel: ObservableObject {
         guard self.window !== window else { return }
         self.window = window
         Self.all.add(self)
-        let guardian = WindowCloseGuard(model: self, original: window.delegate)
+        let guardian = WindowCloseGuard(confirm: { [weak self] in self?.confirmDiscardingChanges() ?? true }, original: window.delegate)
         closeGuard = guardian
         window.delegate = guardian
         updateEditedMark()
@@ -352,16 +352,16 @@ final class DocumentModel: ObservableObject {
 /// Stands in for the window's SwiftUI delegate: asks before closing with unsaved edits, and passes
 /// everything else on to the original delegate.
 final class WindowCloseGuard: NSObject, NSWindowDelegate {
-    private weak var model: DocumentModel?
+    private let confirm: () -> Bool
     private weak var original: NSWindowDelegate?
 
-    init(model: DocumentModel, original: NSWindowDelegate?) {
-        self.model = model
+    init(confirm: @escaping () -> Bool, original: NSWindowDelegate?) {
+        self.confirm = confirm
         self.original = original
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        guard model?.confirmDiscardingChanges() ?? true else { return false }
+        guard confirm() else { return false }
         return original?.windowShouldClose?(sender) ?? true
     }
 
