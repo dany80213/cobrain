@@ -43,7 +43,6 @@ struct TitleActions: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            UpdateButton()
             TitleSearch(model: model)
             Button { model.run("review.newComment") } label: { Label("Comments", systemImage: "bubble.left") }
                 .buttonStyle(.bordered)

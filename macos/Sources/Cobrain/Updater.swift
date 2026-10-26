@@ -126,7 +126,7 @@ final class Updater: ObservableObject {
             let branch = Self.shell("git rev-parse --abbrev-ref HEAD", in: dir).output.trimmingCharacters(in: .whitespacesAndNewlines)
             let dirty = !Self.shell("git status --porcelain --untracked-files=no", in: dir).output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             if branch != "main" || dirty {
-                let why = branch != "main" ? "it is on the branch “\(branch)”" : "it has changes that aren’t committed"
+                let why = branch != "main" ? "is on the branch “\(branch)”" : "has changes that aren’t committed"
                 Self.finish(.failed("Cobrain can’t update itself because its source folder (\(dir.path)) \(why). Switch it to main without changes (git switch main), then try again."))
                 return
             }
@@ -231,9 +231,11 @@ struct UpdateButton: View {
     var body: some View {
         switch updater.state {
         case .available:
-            Button { updater.offerUpdate() } label: { Label("Update", systemImage: "arrow.down.circle.fill") }
-                .help("A new version of Cobrain is on GitHub")
-                .tint(.green)
+            Button { updater.offerUpdate() } label: {
+                Label { Text("Update") } icon: { Image(systemName: "arrow.down.circle.fill").foregroundStyle(.green) }
+                    .labelStyle(.titleAndIcon)
+            }
+            .help("A new version of Cobrain is on GitHub")
         case .updating(let step):
             HStack(spacing: 6) { ProgressView().controlSize(.small); Text(step).font(.caption) }
         case .ready:
