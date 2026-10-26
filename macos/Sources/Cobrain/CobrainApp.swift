@@ -51,13 +51,39 @@ struct WindowRoot: View {
         ContentView(model: model)
             .frame(minWidth: 640, minHeight: 480)
             .focusedSceneObject(model)
-            .onOpenURL { model.open($0) }
+            .background(WindowAccessor { model.attach(to: $0) })
+            .onOpenURL { model.openReplacingCurrent($0) }
             .onAppear { if let url { model.open(url) } }
+    }
+}
+
+/// Hands the hosting `NSWindow` to `found` once the view is in it.
+struct WindowAccessor: NSViewRepresentable {
+    let found: (NSWindow) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async { if let w = view.window { found(w) } }
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        DispatchQueue.main.async { if let w = view.window { found(w) } }
+    }
+}
+
+/// Quitting asks about every document with unsaved edits, like closing each window would.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        for doc in DocumentModel.openDocuments where !doc.confirmDiscardingChanges() { return .terminateCancel }
+        return .terminateNow
     }
 }
 
 @main
 struct CobrainApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     init() { snapshotIfRequested() }
 
     var body: some Scene {
