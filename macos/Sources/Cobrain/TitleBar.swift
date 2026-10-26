@@ -53,7 +53,7 @@ struct TitleActions: View {
                 Label(model.toggles["review.trackChanges"] == true ? "Reviewing" : "Editing", systemImage: "pencil")
             }.menuStyle(.borderlessButton).fixedSize()
             Button { model.share() } label: { Label("Share", systemImage: "square.and.arrow.up") }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.bordered)
         }
     }
 }
