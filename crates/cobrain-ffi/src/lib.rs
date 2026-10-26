@@ -90,6 +90,7 @@ pub unsafe extern "C" fn cobrain_save(doc: *mut CobrainDoc, path: *const c_char)
         let (doc, path) = unsafe { (doc.as_mut()?, from_cstr(path)?) };
         wordcraft_engine::io::save_path(Path::new(path), &doc.session.doc).ok()?;
         doc.session.stamp_save();
+        doc.session.dirty = false;
         Some(0)
     })
     .unwrap_or(-1)
@@ -105,6 +106,20 @@ pub unsafe extern "C" fn cobrain_free(doc: *mut CobrainDoc) {
         // SAFETY: caller contract.
         drop(unsafe { Box::from_raw(doc) });
     }
+}
+
+/// Whether the document has edits since it was opened or last saved (false on failure).
+///
+/// # Safety
+/// `doc` must come from this library.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_is_dirty(doc: *mut CobrainDoc) -> bool {
+    guard(|| {
+        // SAFETY: caller contract.
+        let doc = unsafe { doc.as_mut()? };
+        Some(doc.session.dirty)
+    })
+    .unwrap_or(false)
 }
 
 /// Number of laid-out pages (0 on failure).
