@@ -15,6 +15,8 @@ CobrainDoc *cobrain_open(const char *path);
 int32_t cobrain_save(CobrainDoc *doc, const char *path);
 void cobrain_free(CobrainDoc *doc);
 bool cobrain_is_dirty(CobrainDoc *doc);
+void cobrain_mark_clean(CobrainDoc *doc);
+int32_t cobrain_use_user_dictionary(CobrainDoc *doc, const char *dir);
 
 uint32_t cobrain_page_count(CobrainDoc *doc);
 int32_t cobrain_page_size(CobrainDoc *doc, uint32_t index, float *w, float *h);

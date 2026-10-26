@@ -172,6 +172,8 @@ final class ProjectStore: ObservableObject {
         let url = uniqueURL(folder.appendingPathComponent(base).appendingPathExtension("docx"))
         let subject = place(of: url).components(separatedBy: " › ").first ?? ""
         guard let blank = Engine() else { lastError = "Could not create \(url.lastPathComponent)"; return nil }
+        // The language first, so the template's text is checked in it too.
+        DocumentModel.applyDefaultLanguage(blank)
         template.fill(blank, title: base, subject: subject)
         guard blank.save(to: url.path) else { lastError = "Could not create \(url.lastPathComponent)"; return nil }
         reload()
