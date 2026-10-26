@@ -132,6 +132,58 @@ final class DocumentModel: ObservableObject {
         return NSApp.runModal(for: panel)
     }
 
+    // MARK: Proofing language
+
+    /// The proofing language at the caret (`nil` when the text there has none of its own: the
+    /// engine then checks it as English).
+    var language: String? { format["lang"] as? String }
+
+    /// A blank document starts in the user's proofing language; that setup isn't an edit.
+    static func applyDefaultLanguage(_ e: Engine) {
+        _ = e.run("review.language", ["lang": Proofing.defaultTag, "default": true])
+        e.markClean()
+    }
+
+    /// Status bar › language: the whole document, and what is typed next, is checked in `tag`.
+    func setDocumentLanguage(_ tag: String) {
+        let caret = engine.caret
+        run("select.all")
+        run("review.language", ["lang": tag, "default": true])
+        if let c = caret { click(page: c.page, x: c.x, y: c.top + c.height / 2) }
+        offerDictionary(for: tag)
+    }
+
+    /// Status bar › New documents: the language blank documents start in.
+    func setDefaultLanguage(_ tag: String) {
+        Proofing.defaultTag = tag
+        offerDictionary(for: tag)
+    }
+
+    /// Spelling in `tag` needs a dictionary Cobrain can't ship but can download: ask first.
+    func offerDictionary(for tag: String) {
+        guard Proofing.missingDictionary(tag, engine: engine) else { return }
+        let name = Proofing.name(for: tag)
+        let alert = NSAlert()
+        alert.messageText = "Download the \(name) dictionary?"
+        alert.informativeText = "Spelling in \(name) needs a dictionary that Cobrain can’t include. Download the free LibreOffice dictionary (\(Proofing.downloadSize(tag)), GPL licence) into your Spelling folder?"
+        alert.addButton(withTitle: "Download")
+        alert.addButton(withTitle: "Not Now")
+        guard runSheet(alert) == .alertFirstButtonReturn else { return }
+        Proofing.downloadDictionary(tag) { [weak self] error in
+            guard let self else { return }
+            if let error {
+                let failed = NSAlert()
+                failed.messageText = "The dictionary wasn’t downloaded"
+                failed.informativeText = error
+                _ = self.runSheet(failed)
+                return
+            }
+            Proofing.reloadDictionaries(engine: self.engine)
+            self.refresh()
+            self.revision += 1
+        }
+    }
+
     private func updateEditedMark() {
         window?.isDocumentEdited = engine.isDirty
         window?.representedURL = fileURL
@@ -275,7 +327,7 @@ final class DocumentModel: ObservableObject {
 
     func newDocument(template: String = "blank") {
         guard confirmDiscardingChanges(), let e = Engine() else { return }
-        if template != "blank" { _ = e.run("file.new", ["template": template]) }
+        if template != "blank" { _ = e.run("file.new", ["template": template]) } else { Self.applyDefaultLanguage(e) }
         engine = e
         fileURL = nil
         diskDate = nil

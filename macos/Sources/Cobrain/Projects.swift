@@ -170,7 +170,9 @@ final class ProjectStore: ObservableObject {
         guard let clean = cleanName(name) else { return nil }
         let base = clean.lowercased().hasSuffix(".docx") ? String(clean.dropLast(5)) : clean
         let url = uniqueURL(folder.appendingPathComponent(base).appendingPathExtension("docx"))
-        guard let blank = Engine(), blank.save(to: url.path) else { lastError = "Could not create \(url.lastPathComponent)"; return nil }
+        guard let blank = Engine() else { lastError = "Could not create \(url.lastPathComponent)"; return nil }
+        DocumentModel.applyDefaultLanguage(blank)
+        guard blank.save(to: url.path) else { lastError = "Could not create \(url.lastPathComponent)"; return nil }
         reload()
         return url
     }

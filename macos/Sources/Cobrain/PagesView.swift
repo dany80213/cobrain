@@ -136,6 +136,46 @@ final class PagesNSView: NSView {
         autoscroll(with: event)
     }
 
+    /// Right-click: the engine's suggestions for the misspelled word (or grammar issue) under the
+    /// pointer, Ignore All / Add to Dictionary, then Cut, Copy and Paste.
+    override func menu(for event: NSEvent) -> NSMenu? {
+        window?.makeFirstResponder(self)
+        guard let h = hit(event) else { return nil }
+        // As in Word, a right-click outside the selection moves the caret there first.
+        let selection = model.engine.selectionRects().selection
+        let inSelection = selection.contains { r in
+            r.count == 5 && Int(r[0]) == h.page && CGRect(x: r[1], y: r[2], width: r[3], height: r[4]).contains(CGPoint(x: h.x, y: h.y))
+        }
+        if !inSelection { model.click(page: h.page, x: h.x, y: h.y) }
+
+        let menu = NSMenu()
+        let model = self.model
+        if case .success(let r) = model.engine.run("review.suggestions"), let issue = r as? [String: Any] {
+            let spelling = issue["kind"] as? String == "spelling"
+            if !spelling, let message = issue["message"] as? String, !message.isEmpty {
+                menu.addItem(ActionMenuItem(message, enabled: false) {})
+            }
+            let suggestions = issue["suggestions"] as? [String] ?? []
+            for s in suggestions {
+                let item = ActionMenuItem(s) { model.run("review.applySuggestion", ["text": s]) }
+                item.attributedTitle = NSAttributedString(string: s, attributes: [.font: NSFont.boldSystemFont(ofSize: NSFont.systemFontSize)])
+                menu.addItem(item)
+            }
+            if suggestions.isEmpty { menu.addItem(ActionMenuItem("No Suggestions", enabled: false) {}) }
+            menu.addItem(.separator())
+            if spelling, let word = issue["text"] as? String, !word.isEmpty {
+                menu.addItem(ActionMenuItem("Ignore All") { model.run("review.ignoreAll", ["word": word]) })
+                menu.addItem(ActionMenuItem("Add to Dictionary") { model.run("review.addToDictionary", ["word": word]) })
+                menu.addItem(.separator())
+            }
+        }
+        let hasSelection = inSelection || !model.engine.selectionRects().selection.isEmpty
+        menu.addItem(ActionMenuItem("Cut", enabled: hasSelection) { model.run("edit.cut") })
+        menu.addItem(ActionMenuItem("Copy", enabled: hasSelection) { model.run("edit.copy") })
+        menu.addItem(ActionMenuItem("Paste") { model.paste() })
+        return menu
+    }
+
     /// ⌘/⌃/⌥ shortcuts come from the engine's registry (`CommandSpec.shortcut`, `Mod` = ⌘).
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard window?.firstResponder === self, let key = Self.shortcutName(event), let id = model.engine.command(forShortcut: key) else { return false }

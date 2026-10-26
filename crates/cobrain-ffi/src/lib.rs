@@ -122,6 +122,40 @@ pub unsafe extern "C" fn cobrain_is_dirty(doc: *mut CobrainDoc) -> bool {
     .unwrap_or(false)
 }
 
+/// Forget the edits so far: a new document's setup (its proofing language) isn't the user's work.
+///
+/// # Safety
+/// `doc` must come from this library.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_mark_clean(doc: *mut CobrainDoc) {
+    let _ = guard(|| {
+        // SAFETY: caller contract.
+        let doc = unsafe { doc.as_mut()? };
+        doc.session.dirty = false;
+        Some(())
+    });
+}
+
+/// Keep the custom dictionary (Add to Dictionary) in the file named `dir`/`custom-dictionary.txt`:
+/// read it now and save every word added from this document there. Returns 0 on success.
+///
+/// # Safety
+/// `doc` must come from this library; `dir` must be a valid NUL-terminated UTF-8 string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cobrain_use_user_dictionary(doc: *mut CobrainDoc, dir: *const c_char) -> i32 {
+    guard(|| {
+        // SAFETY: forwarded caller contract.
+        let (doc, dir) = unsafe { (doc.as_mut()?, from_cstr(dir)?) };
+        let path = Path::new(dir).join(Session::USER_DICT_FILE);
+        if path.exists() {
+            wordcraft_engine::proof::load_user_dictionary(&path);
+        }
+        doc.session.user_dict_path = Some(path);
+        Some(0)
+    })
+    .unwrap_or(-1)
+}
+
 /// Number of laid-out pages (0 on failure).
 ///
 /// # Safety
@@ -692,5 +726,29 @@ mod tests {
             cobrain_free(doc);
         }
         let _ = std::fs::remove_file(path);
+    }
+
+    /// A new document's setup can be forgotten, and Add to Dictionary writes to the folder given.
+    #[test]
+    fn mark_clean_and_custom_dictionary_file() {
+        let dir = std::env::temp_dir().join(format!("cobrain-dict-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cdir = CString::new(dir.to_string_lossy().into_owned()).unwrap();
+        let run = |doc: *mut CobrainDoc, id: &str, p: &str| unsafe {
+            let (id, p) = (CString::new(id).unwrap(), CString::new(p).unwrap());
+            cobrain_free_string(cobrain_run(doc, id.as_ptr(), p.as_ptr()));
+        };
+        unsafe {
+            let doc = cobrain_new_blank();
+            run(doc, "review.language", r#"{"lang":"it-IT","default":true}"#);
+            cobrain_mark_clean(doc);
+            assert!(!cobrain_is_dirty(doc));
+            assert_eq!(cobrain_use_user_dictionary(doc, cdir.as_ptr()), 0);
+            run(doc, "review.addToDictionary", r#"{"word":"Cobrainese"}"#);
+            cobrain_free(doc);
+        }
+        let saved = std::fs::read_to_string(dir.join(Session::USER_DICT_FILE)).unwrap_or_default();
+        assert!(saved.lines().any(|l| l == "cobrainese"), "the added word is saved (lowercased): {saved:?}");
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
