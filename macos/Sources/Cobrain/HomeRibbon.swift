@@ -14,7 +14,9 @@ struct HomeRibbon: View {
     private var columns: [RibbonColumn] {
         let spec = SpecNode.tabs["Home"] ?? []
         func col(_ title: String, _ v: some View, compact: AnyView? = nil) -> RibbonColumn {
-            RibbonColumn(id: title, title: title, content: AnyView(v), compact: compact, menu: spec.first { $0.title == title }.map(SpecNode.menu(of:)) ?? SpecNode(t: "menu"))
+            var menu = spec.first { $0.title == title }.map(SpecNode.menu(of:)) ?? SpecNode(t: "menu")
+            if title == "Paragraph" { menu.items = (menu.items ?? []) + [SpecNode(t: "sep"), ListStyle.menuNode] }
+            return RibbonColumn(id: title, title: title, content: AnyView(v), compact: compact, menu: menu)
         }
         return [col("Clipboard", clipboardBody), col("Font", fontBody), col("Paragraph", paragraphBody), col("Styles", stylesBody, compact: AnyView(stylesGallery(width: 190))),
                 col("Editing", editingBody), col("Voice", bigButton("Dictate", "dictate", "tools.dictate")),
@@ -148,6 +150,30 @@ struct HomeRibbon: View {
         }
     }
 
+    /// Pages' Bullets & Lists: None, then Bullet, Image, Lettered, Numbered, Harvard, Dashed, Note Taking.
+    private var listsMenu: some View {
+        Button {
+            let menu = NSMenu()
+            let none = NSMenuItem(title: "None", action: #selector(MenuTarget.fire), keyEquivalent: "")
+            let off = MenuTarget { model.applyList(nil) }
+            none.target = off; none.representedObject = off
+            menu.addItem(none)
+            menu.addItem(.separator())
+            for style in ListStyle.allCases {
+                let mi = NSMenuItem(title: style.title, action: #selector(MenuTarget.fire), keyEquivalent: "")
+                mi.attributedTitle = style.menuTitle
+                let t = MenuTarget { model.applyList(style) }
+                mi.target = t; mi.representedObject = t
+                menu.addItem(mi)
+            }
+            menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+        } label: {
+            HStack(spacing: 2) { Text("Lists").font(.system(size: 11)); Text("▾").font(.system(size: 8)) }
+                .frame(height: 24).padding(.horizontal, 4).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).help("Bullets & Lists (Pages styles)")
+    }
+
     private var paragraphBody: some View {
         Group {
             VStack(alignment: .leading, spacing: 6) {
@@ -155,6 +181,7 @@ struct HomeRibbon: View {
                     icon("bullets", "para.bullets", help: "Bullets")
                     icon("numbering", "para.numbering", help: "Numbering")
                     icon("multilevel", "para.multilevel", help: "Multilevel List")
+                    listsMenu
                     sepV
                     icon("outdent", "para.outdent", help: "Decrease Indent")
                     icon("indent", "para.indent", help: "Increase Indent")
