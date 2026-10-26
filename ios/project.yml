@@ -1,4 +1,4 @@
-name: CobrainBoard
+name: Cobrain
 options:
   bundleIdPrefix: com.cobrain
   deploymentTarget:
@@ -7,33 +7,44 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
 targets:
-  CobrainBoard:
+  Cobrain:
     type: application
     platform: iOS
     sources:
       - path: Sources
       - path: ../macos/Sources/Cobrain/Board
+      - path: ../macos/Sources/Cobrain/Engine.swift
+      - path: ../macos/Resources/icons
+        type: folder
+        buildPhase: resources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.cobrain.board
-        PRODUCT_NAME: Cobrain Board
+        PRODUCT_BUNDLE_IDENTIFIER: com.cobrain.app
+        PRODUCT_NAME: Cobrain
         TARGETED_DEVICE_FAMILY: "2"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
-        INFOPLIST_KEY_CFBundleDisplayName: Cobrain Board
+        INFOPLIST_KEY_CFBundleDisplayName: Cobrain
         INFOPLIST_KEY_UIRequiresFullScreen: NO
         CODE_SIGN_STYLE: Automatic
+        SWIFT_INCLUDE_PATHS: $(SRCROOT)/../macos/Sources/CCobrain/include
+        OTHER_LDFLAGS: "-lcobrain_ffi -lc++ -liconv -framework Security -framework CoreFoundation -framework CoreText -framework CoreGraphics -framework SystemConfiguration"
+        "LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]": $(SRCROOT)/../target/aarch64-apple-ios-sim/release
+        "LIBRARY_SEARCH_PATHS[sdk=iphoneos*]": $(SRCROOT)/../target/aarch64-apple-ios/release
     info:
       path: Info.plist
       properties:
-        UISupportsDocumentBrowser: true
+        UISupportsDocumentBrowser: false
         LSSupportsOpeningDocumentsInPlace: true
         UIFileSharingEnabled: true
         CFBundleDocumentTypes:
           - CFBundleTypeName: Cobrain Whiteboard
             LSHandlerRank: Owner
             LSItemContentTypes: [com.cobrain.board]
+          - CFBundleTypeName: Word Document
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [org.openxmlformats.wordprocessingml.document, public.rtf, public.plain-text]
         UTExportedTypeDeclarations:
           - UTTypeIdentifier: com.cobrain.board
             UTTypeDescription: Cobrain Whiteboard

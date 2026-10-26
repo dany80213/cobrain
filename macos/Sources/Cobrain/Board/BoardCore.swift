@@ -363,6 +363,9 @@ final class BoardModel: ObservableObject {
         editBefore = nil
     }
 
+    /// Leave text editing (keeping what was typed) before the board is written out.
+    func endEditingForSave() { endEditing() }
+
     func deleteSelection() {
         guard !selection.isEmpty else { return }
         endEditing()

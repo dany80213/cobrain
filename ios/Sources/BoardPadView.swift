@@ -5,7 +5,6 @@ struct BoardPadView: View {
     @ObservedObject var board: BoardModel
     @Environment(\.undoManager) private var undoManager
     @State private var showStyle = false
-    @State private var pngFile: BoardPNG?
 
     private static let drawing: [BoardTool] = [.select, .hand, .pen, .eraser]
     private static let shapes: [BoardTool] = [.rect, .roundRect, .ellipse, .triangle, .diamond, .star, .line, .arrow]
@@ -26,11 +25,10 @@ struct BoardPadView: View {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button { board.undo() } label: { Image(systemName: "arrow.uturn.backward") }.disabled(!board.canUndo)
                     Button { board.redo() } label: { Image(systemName: "arrow.uturn.forward") }.disabled(!board.canRedo)
-                    if let png = pngFile { ShareLink(item: png, preview: SharePreview("Whiteboard")) { Image(systemName: "square.and.arrow.up") } }
+                    ShareLink(item: BoardPNG(board: board), preview: SharePreview("Whiteboard")) { Image(systemName: "square.and.arrow.up") }
+                        .disabled(board.elements.isEmpty)
                 }
             }
-            .onChange(of: board.elements) { _, _ in pngFile = board.elements.isEmpty ? nil : BoardPNG(board: board) }
-            .onAppear { pngFile = board.elements.isEmpty ? nil : BoardPNG(board: board) }
     }
 
     // MARK: Tool palette
