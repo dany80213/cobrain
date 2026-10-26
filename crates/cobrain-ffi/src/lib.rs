@@ -664,4 +664,33 @@ mod tests {
             cobrain_free(doc);
         }
     }
+
+    /// The app asks "save changes?" only when this says so: fresh and saved documents are clean,
+    /// an edit or a click that moves nothing doesn't count, an edit does.
+    #[test]
+    fn dirty_flag_follows_edits_and_saves() {
+        let path = std::env::temp_dir().join(format!("cobrain-dirty-{}.docx", std::process::id()));
+        let cpath = CString::new(path.to_string_lossy().into_owned()).unwrap();
+        unsafe {
+            for doc in [cobrain_new_blank(), cobrain_new_sample()] {
+                assert!(!doc.is_null());
+                assert!(!cobrain_is_dirty(doc), "a new document has no edits");
+                let (mut pg, mut x, mut t, mut hh) = (0u32, 0f32, 0f32, 0f32);
+                assert_eq!(cobrain_caret(doc, &mut pg, &mut x, &mut t, &mut hh), 0);
+                assert_eq!(cobrain_click(doc, 0, x, t + 1.0), 0);
+                assert!(!cobrain_is_dirty(doc), "placing the caret is not an edit");
+                let (id, p) = (CString::new("text.insert").unwrap(), CString::new(r#"{"text":"x"}"#).unwrap());
+                cobrain_free_string(cobrain_run(doc, id.as_ptr(), p.as_ptr()));
+                assert!(cobrain_is_dirty(doc), "typing is an edit");
+                assert_eq!(cobrain_save(doc, cpath.as_ptr()), 0);
+                assert!(!cobrain_is_dirty(doc), "saving clears it");
+                cobrain_free(doc);
+            }
+            let doc = cobrain_open(cpath.as_ptr());
+            assert!(!doc.is_null());
+            assert!(!cobrain_is_dirty(doc), "an opened file has no edits");
+            cobrain_free(doc);
+        }
+        let _ = std::fs::remove_file(path);
+    }
 }

@@ -59,31 +59,80 @@ final class DocumentModel: ObservableObject {
         revision += 1
     }
 
-    /// Opens `url` in this window, first saving the current document when it belongs to the open
-    /// project, or asking when it is somewhere else or untitled. Does nothing if the user cancels.
+    /// Opens `url` in this window once the current document's edits are saved or given up
+    /// (see `confirmDiscardingChanges`). Does nothing if the user cancels.
     func openReplacingCurrent(_ url: URL) {
-        guard url != fileURL else { return }
-        if engine.isDirty {
-            if let current = fileURL, let project = ProjectStore.shared.current, current.path.hasPrefix(project.path + "/") {
-                write(to: current)
-                if engine.isDirty { return }
-            } else {
-                let alert = NSAlert()
-                alert.messageText = "Save changes to “\(title)”?"
-                alert.informativeText = "Your changes are lost if you don’t save them."
-                alert.addButton(withTitle: "Save")
-                alert.addButton(withTitle: "Don’t Save")
-                alert.addButton(withTitle: "Cancel")
-                switch alert.runModal() {
-                case .alertFirstButtonReturn:
-                    save()
-                    if engine.isDirty { return }
-                case .alertSecondButtonReturn: break
-                default: return
-                }
-            }
-        }
+        guard url != fileURL, confirmDiscardingChanges() else { return }
         open(url)
+    }
+
+    /// Before this document goes away (window closed, app quit, another file opened here): saves a
+    /// document with AutoSave on by itself, and asks Save / Don't Save / Cancel for anything else with
+    /// edits. False when the user cancelled or saving failed, so the caller must keep the document.
+    func confirmDiscardingChanges() -> Bool {
+        guard engine.isDirty else { return true }
+        if autosave, let url = fileURL, url.pathExtension.lowercased() != "pdf" {
+            write(to: url)
+            return !engine.isDirty
+        }
+        let alert = NSAlert()
+        alert.messageText = "Do you want to save the changes you made to “\(title)”?"
+        alert.informativeText = "Your changes will be lost if you don’t save them."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Don’t Save")
+        alert.addButton(withTitle: "Cancel")
+        switch runSheet(alert) {
+        case .alertFirstButtonReturn:
+            save()
+            return !engine.isDirty
+        case .alertSecondButtonReturn:
+            return true
+        default:
+            return false
+        }
+    }
+
+    // MARK: Window
+
+    /// Every open document, so quitting can ask about each one with edits.
+    private static var all = NSHashTable<DocumentModel>.weakObjects()
+    static var openDocuments: [DocumentModel] { all.allObjects }
+
+    private(set) weak var window: NSWindow?
+    private var closeGuard: WindowCloseGuard?
+
+    /// Called once the SwiftUI window exists: asks before it closes with unsaved edits, and shows
+    /// the edited dot in its close button.
+    func attach(to window: NSWindow) {
+        guard self.window !== window else { return }
+        self.window = window
+        Self.all.add(self)
+        let guardian = WindowCloseGuard(model: self, original: window.delegate)
+        closeGuard = guardian
+        window.delegate = guardian
+        updateEditedMark()
+    }
+
+    /// Shows an alert or a file panel as a sheet on this document's window and waits for the answer.
+    /// A free-standing modal window would open on another Space when the window is full screen,
+    /// where nobody sees it and the app looks stuck.
+    private func runSheet(_ alert: NSAlert) -> NSApplication.ModalResponse {
+        guard let window, window.isVisible, window.attachedSheet == nil else { return alert.runModal() }
+        window.makeKeyAndOrderFront(nil)
+        alert.beginSheetModal(for: window) { NSApp.stopModal(withCode: $0) }
+        return NSApp.runModal(for: alert.window)
+    }
+
+    private func runSheet(_ panel: NSSavePanel) -> NSApplication.ModalResponse {
+        guard let window, window.isVisible, window.attachedSheet == nil else { return panel.runModal() }
+        window.makeKeyAndOrderFront(nil)
+        panel.beginSheetModal(for: window) { NSApp.stopModal(withCode: $0) }
+        return NSApp.runModal(for: panel)
+    }
+
+    private func updateEditedMark() {
+        window?.isDocumentEdited = engine.isDirty
+        window?.representedURL = fileURL
     }
 
     /// Re-read the state the chrome shows (formatting at the caret, styles, headings).
@@ -98,6 +147,7 @@ final class DocumentModel: ObservableObject {
         if case .success(let i) = engine.run("file.info"), let d = i as? [String: Any] { wordCount = d["words"] as? Int ?? 0 }
         if let c = engine.caret { caretPage = c.page }
         if let p = engine.pageSize(0) { pageWidth = p.width }
+        updateEditedMark()
     }
 
     private var previewCache: [String: CGImage] = [:]
@@ -196,7 +246,7 @@ final class DocumentModel: ObservableObject {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.pdf]
         panel.nameFieldStringValue = (fileURL?.deletingPathExtension().lastPathComponent ?? "Untitled") + ".pdf"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard runSheet(panel) == .OK, let url = panel.url else { return }
         write(to: url)
     }
 
@@ -222,7 +272,7 @@ final class DocumentModel: ObservableObject {
     }
 
     func newDocument() {
-        guard let e = Engine() else { return }
+        guard confirmDiscardingChanges(), let e = Engine() else { return }
         engine = e
         fileURL = nil
         diskDate = nil
@@ -233,8 +283,8 @@ final class DocumentModel: ObservableObject {
     func open() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = ["docx", "doc", "rtf", "odt", "md", "txt", "html"].compactMap { .init(filenameExtension: $0) }
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        open(url)
+        guard runSheet(panel) == .OK, let url = panel.url else { return }
+        openReplacingCurrent(url)
     }
 
     func open(_ url: URL) {
@@ -245,6 +295,8 @@ final class DocumentModel: ObservableObject {
         engine = e
         fileURL = url
         diskDate = modificationDate(url)
+        // Project files save themselves, like notes; the toggle in the title bar can still turn it off.
+        autosave = ProjectStore.shared.contains(url)
         lastError = nil
         NSDocumentController.shared.noteNewRecentDocumentURL(url)
         refresh()
@@ -259,7 +311,7 @@ final class DocumentModel: ObservableObject {
         let panel = NSSavePanel()
         panel.allowedContentTypes = ["docx", "pdf", "rtf", "odt", "md", "txt", "html"].compactMap { .init(filenameExtension: $0) }
         panel.nameFieldStringValue = fileURL?.lastPathComponent ?? "Untitled.docx"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard runSheet(panel) == .OK, let url = panel.url else { return }
         write(to: url)
         if url.pathExtension.lowercased() != "pdf" { fileURL = url }
     }
@@ -274,7 +326,7 @@ final class DocumentModel: ObservableObject {
             alert.addButton(withTitle: "Save as Copy")
             alert.addButton(withTitle: "Replace Their Version")
             alert.addButton(withTitle: "Cancel")
-            switch alert.runModal() {
+            switch runSheet(alert) {
             case .alertFirstButtonReturn:
                 let stamp = DateFormatter()
                 stamp.dateFormat = "yyyy-MM-dd HH.mm"
@@ -287,6 +339,32 @@ final class DocumentModel: ObservableObject {
         }
         lastError = engine.save(to: url.path) ? nil : "Could not save \(url.lastPathComponent)"
         if url == fileURL { diskDate = modificationDate(url) }
+        updateEditedMark()
         objectWillChange.send()
+    }
+}
+
+/// Stands in for the window's SwiftUI delegate: asks before closing with unsaved edits, and passes
+/// everything else on to the original delegate.
+final class WindowCloseGuard: NSObject, NSWindowDelegate {
+    private weak var model: DocumentModel?
+    private weak var original: NSWindowDelegate?
+
+    init(model: DocumentModel, original: NSWindowDelegate?) {
+        self.model = model
+        self.original = original
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard model?.confirmDiscardingChanges() ?? true else { return false }
+        return original?.windowShouldClose?(sender) ?? true
+    }
+
+    override func responds(to aSelector: Selector!) -> Bool {
+        super.responds(to: aSelector) || (original?.responds(to: aSelector) ?? false)
+    }
+
+    override func forwardingTarget(for aSelector: Selector!) -> Any? {
+        original?.responds(to: aSelector) == true ? original : super.forwardingTarget(for: aSelector)
     }
 }
