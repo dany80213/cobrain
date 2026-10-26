@@ -55,6 +55,8 @@ pub const TABLE: &[(&str, Class)] = &[
     ("cli", Class::Exempt),
     ("web", Class::Exempt),
     ("xtask", Class::Exempt),
+    // Cobrain's C-ABI bridge to the SwiftUI app: a front end like the apps above
+    ("cobrain-ffi", Class::Exempt),
 ];
 
 /// Explicit orderings *within* a layer (earlier may be used by later).
