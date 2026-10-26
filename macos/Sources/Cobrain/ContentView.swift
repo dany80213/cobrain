@@ -20,6 +20,8 @@ struct ContentView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) { StatusBar(model: model) }
             .toolbar {
                 ToolbarItemGroup(placement: .navigation) {
+                    // Left side: stays visible when the window is too narrow for the right-hand items.
+                    UpdateButton()
                     Button { model.projectsVisible.toggle() } label: { Label("Projects", systemImage: "sidebar.left") }
                         .help("Show or hide your projects")
                     Toggle(isOn: $model.autosave) { Text("AutoSave").font(.system(size: 12)) }.toggleStyle(.switch).controlSize(.mini)
