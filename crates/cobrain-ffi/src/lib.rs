@@ -246,10 +246,10 @@ pub unsafe extern "C" fn cobrain_outline(doc: *mut CobrainDoc) -> *mut c_char {
         let mut out = Vec::new();
         for (i, block) in doc.session.doc.body.iter().enumerate() {
             let level = levels.get(i).copied().unwrap_or(10);
-            if let wordcraft_engine::doc::Block::Para(p) = &**block {
-                if level < 10 {
-                    out.push(serde_json::json!({ "level": level, "text": p.plain_text(), "block": i }));
-                }
+            if let wordcraft_engine::doc::Block::Para(p) = &**block
+                && level < 10
+            {
+                out.push(serde_json::json!({ "level": level, "text": p.plain_text(), "block": i }));
             }
         }
         Some(to_cstring(serde_json::Value::Array(out).to_string()))
@@ -363,8 +363,7 @@ pub unsafe extern "C" fn cobrain_gallery_styles(doc: *mut CobrainDoc) -> *mut c_
     guard(|| {
         // SAFETY: caller contract.
         let doc = unsafe { doc.as_mut()? };
-        let v: Vec<serde_json::Value> =
-            doc.session.doc.styles.gallery().iter().map(|s| serde_json::json!({ "id": s.id, "name": s.name })).collect();
+        let v: Vec<serde_json::Value> = doc.session.doc.styles.gallery().iter().map(|s| serde_json::json!({ "id": s.id, "name": s.name })).collect();
         Some(to_cstring(serde_json::Value::Array(v).to_string()))
     })
     .unwrap_or(std::ptr::null_mut())
@@ -666,4 +665,3 @@ mod tests {
         }
     }
 }
-
