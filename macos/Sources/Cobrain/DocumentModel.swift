@@ -4,7 +4,7 @@ import SwiftUI
 
 /// Observable document state shared by the window, the menus and the page view.
 final class DocumentModel: ObservableObject {
-    @Published private(set) var engine: Engine
+    @Published private(set) var engine: Engine { didSet { listStyles = [:] } }
     /// Bumped after every engine change so the page view redraws.
     @Published private(set) var revision = 0
     @Published var fileURL: URL?
@@ -184,17 +184,36 @@ final class DocumentModel: ObservableObject {
 
     var title: String { fileURL?.lastPathComponent ?? "Untitled" }
 
-    func run(_ id: String, _ params: [String: Any] = [:]) {
+    /// Runs an engine command and updates everything that shows the document. Returns the
+    /// command's result, or `nil` when it failed (`lastError` says why).
+    @discardableResult
+    func run(_ id: String, _ params: [String: Any] = [:]) -> Any? {
+        var result: Any?
         switch engine.run(id, params) {
         case .success(let r):
             lastError = nil
             handleClipboard(id, r)
+            result = r
         case .failure(let e): lastError = e.message
         }
         handleUIRequests()
         refresh()
         revision += 1
         scheduleAutosave()
+        return result
+    }
+
+    /// The list each Pages-style list was last defined as in this document, so choosing the
+    /// style the caret's list already has does nothing (instead of starting a new list).
+    private var listStyles: [Int: ListStyle] = [:]
+
+    /// Home › Paragraph › Lists: number the selected paragraphs in `style`, or take them out of
+    /// any list (`nil`). Paragraphs already in a list keep their level.
+    func applyList(_ style: ListStyle?) {
+        guard let style else { run("para.bullets", ["off": true]); return }
+        if case .success(let r) = engine.run("list.get"), let num = (r as? [String: Any])?["num"] as? Int, listStyles[num] == style { return }
+        let r = run("list.define", ["levels": style.levels, "name": style.title])
+        if let num = (r as? [String: Any])?["num"] as? Int { listStyles[num] = style }
     }
 
     /// AutoSave: write the file two seconds after the last change (only for a document that has a file).

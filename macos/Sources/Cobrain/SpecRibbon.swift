@@ -189,6 +189,7 @@ struct SpecRibbon: View {
         guard let cmd = n.cmd, !cmd.isEmpty else { return }
         let params = (n.params?.data(using: .utf8)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
         if cmd == "ui.tab", let tab = params["tab"] as? String { selectTab(tab); return }
+        if cmd == ListStyle.command { model.applyList(ListStyle(rawValue: params["style"] as? String ?? "")); return }
         if cmd == "ui.dialog" {
             model.dialog = DialogKind.named(params["name"] as? String ?? "", label: n.label ?? cmd)
             return
