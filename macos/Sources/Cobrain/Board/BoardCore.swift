@@ -1,5 +1,11 @@
-import AppKit
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+typealias PlatformFont = UIFont
+#else
+import AppKit
+typealias PlatformFont = NSFont
+#endif
 
 // Whiteboard document (Canva-style): an infinite canvas of shapes, lines, pen strokes, text and sticky notes.
 // Saved as `.cobrainboard` (JSON). Unlike word documents this has no engine counterpart: it lives in Swift.
@@ -13,8 +19,8 @@ struct BoardColor: Codable, Equatable {
     }
     init(r: Double, g: Double, b: Double, a: Double) { self.r = r; self.g = g; self.b = b; self.a = a }
     init(_ c: Color) {
-        let n = NSColor(c).usingColorSpace(.sRGB) ?? .black
-        self.init(r: Double(n.redComponent), g: Double(n.greenComponent), b: Double(n.blueComponent), a: Double(n.alphaComponent))
+        let n = c.resolve(in: EnvironmentValues())
+        self.init(r: Double(n.red), g: Double(n.green), b: Double(n.blue), a: Double(n.opacity))
     }
 }
 
@@ -23,18 +29,18 @@ enum BoardKind: String, Codable {
 }
 
 enum BoardTool: String, CaseIterable, Identifiable {
-    case select, hand, rect, roundRect, ellipse, triangle, diamond, star, line, arrow, pen, text, sticky
+    case select, hand, eraser, rect, roundRect, ellipse, triangle, diamond, star, line, arrow, pen, text, sticky
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .select: "Select"; case .hand: "Pan"; case .rect: "Rectangle"; case .roundRect: "Rounded rectangle"; case .ellipse: "Ellipse"
+        case .select: "Select"; case .hand: "Pan"; case .eraser: "Eraser"; case .rect: "Rectangle"; case .roundRect: "Rounded rectangle"; case .ellipse: "Ellipse"
         case .triangle: "Triangle"; case .diamond: "Diamond"; case .star: "Star"; case .line: "Line"; case .arrow: "Arrow"
         case .pen: "Pen"; case .text: "Text"; case .sticky: "Sticky note"
         }
     }
     var symbol: String {
         switch self {
-        case .select: "cursorarrow"; case .hand: "hand.raised"; case .rect: "rectangle"; case .roundRect: "square"; case .ellipse: "circle"
+        case .select: "cursorarrow"; case .hand: "hand.raised"; case .eraser: "eraser"; case .rect: "rectangle"; case .roundRect: "square"; case .ellipse: "circle"
         case .triangle: "triangle"; case .diamond: "diamond"; case .star: "star"; case .line: "line.diagonal"; case .arrow: "arrow.up.right"
         case .pen: "pencil.tip"; case .text: "textformat"; case .sticky: "note.text"
         }
@@ -53,6 +59,8 @@ struct BoardElement: Codable, Identifiable, Equatable {
     var fontSize = 20.0
     /// Line, arrow and pen: the polyline in board coordinates.
     var points: [[Double]] = []
+    /// Pen strokes drawn with Apple Pencil: pressure (0…1) per point, giving a variable line width.
+    var pressures: [Double]?
 
     var isLinear: Bool { kind == .line || kind == .arrow || kind == .pen }
 
@@ -103,6 +111,14 @@ struct BoardElement: Codable, Identifiable, Equatable {
             }
             p.closeSubpath()
             return p
+        case .pen where points.count > 2:
+            // Quadratic curves through the midpoints: smooth ink from raw touch samples.
+            let pts = points.compactMap { $0.count == 2 ? CGPoint(x: $0[0], y: $0[1]) : nil }
+            var p = Path()
+            p.move(to: pts[0])
+            for i in 1..<pts.count - 1 { p.addQuadCurve(to: CGPoint(x: (pts[i].x + pts[i + 1].x) / 2, y: (pts[i].y + pts[i + 1].y) / 2), control: pts[i]) }
+            p.addLine(to: pts[pts.count - 1])
+            return p
         case .line, .arrow, .pen:
             var p = Path()
             for (i, q) in points.enumerated() where q.count == 2 {
@@ -130,7 +146,7 @@ struct BoardElement: Codable, Identifiable, Equatable {
     }
 }
 
-private struct BoardFile: Codable { var version = 1; var elements: [BoardElement] }
+struct BoardFile: Codable { var version = 1; var elements: [BoardElement] }
 
 enum BoardDrawing {
     static func draw(_ e: BoardElement, in ctx: inout GraphicsContext) {
@@ -138,7 +154,11 @@ enum BoardDrawing {
         switch e.kind {
         case .line, .arrow, .pen:
             let style = StrokeStyle(lineWidth: e.lineWidth, lineCap: .round, lineJoin: .round)
-            ctx.stroke(e.path(in: r), with: .color(e.stroke.color), style: style)
+            if e.kind == .pen, let pr = e.pressures, pr.count == e.points.count, e.points.count > 2 {
+                strokeVariable(e, pr, in: &ctx)
+            } else {
+                ctx.stroke(e.path(in: r), with: .color(e.stroke.color), style: style)
+            }
             if e.kind == .arrow, e.points.count >= 2, let a = e.points.first, let b = e.points.last, a.count == 2, b.count == 2 {
                 let angle = atan2(b[1] - a[1], b[0] - a[0]), len = 10 + e.lineWidth * 3
                 var head = Path()
@@ -162,6 +182,24 @@ enum BoardDrawing {
         }
     }
 
+    /// Pencil ink: one curve per segment, as wide as the pressure at its middle point.
+    private static func strokeVariable(_ e: BoardElement, _ pr: [Double], in ctx: inout GraphicsContext) {
+        let pts = e.points.compactMap { $0.count == 2 ? CGPoint(x: $0[0], y: $0[1]) : nil }
+        guard pts.count == pr.count else { return }
+        func mid(_ a: CGPoint, _ b: CGPoint) -> CGPoint { CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2) }
+        for i in 1..<pts.count - 1 {
+            var seg = Path()
+            seg.move(to: mid(pts[i - 1], pts[i]))
+            seg.addQuadCurve(to: mid(pts[i], pts[i + 1]), control: pts[i])
+            let w = e.lineWidth * (0.35 + 1.3 * pr[i])
+            ctx.stroke(seg, with: .color(e.stroke.color), style: StrokeStyle(lineWidth: w, lineCap: .round, lineJoin: .round))
+        }
+        var first = Path(); first.move(to: pts[0]); first.addLine(to: mid(pts[0], pts[1]))
+        ctx.stroke(first, with: .color(e.stroke.color), style: StrokeStyle(lineWidth: e.lineWidth * (0.35 + 1.3 * pr[0]), lineCap: .round))
+        var last = Path(); last.move(to: mid(pts[pts.count - 2], pts[pts.count - 1])); last.addLine(to: pts[pts.count - 1])
+        ctx.stroke(last, with: .color(e.stroke.color), style: StrokeStyle(lineWidth: e.lineWidth * (0.35 + 1.3 * pr[pr.count - 1]), lineCap: .round))
+    }
+
     private static func drawText(_ s: String, in r: CGRect, size: Double, color: Color, centered: Bool, ctx: inout GraphicsContext) {
         guard !s.isEmpty, r.width > 4 else { return }
         let resolved = ctx.resolve(Text(s).font(.system(size: size)).foregroundColor(color))
@@ -179,19 +217,33 @@ final class BoardModel: ObservableObject {
     @Published var pan: CGSize = .zero
     @Published var editing: UUID?
     @Published var fileURL: URL?
-    @Published var dirty = false { didSet { window?.isDocumentEdited = dirty } }
+    @Published var dirty = false
+    @Published var marquee: CGRect?
     @Published private(set) var canUndo = false
     @Published private(set) var canRedo = false
     @Published var fill: BoardColor = .hex(0x7C6CF0)
     @Published var stroke: BoardColor = .hex(0x2B2B33)
     @Published var lineWidth = 2.0
     @Published var fontSize = 20.0
+    /// iPad: with the pen tool, only Apple Pencil draws; a finger scrolls the board.
+    @Published var pencilOnly = true
     var viewSize = CGSize(width: 800, height: 600)
+    private(set) lazy var interactor = BoardInteractor(board: self)
 
-    private var dirtyBeforeSnapshot = false
-    private var undoStack: [[BoardElement]] = []
-    private var redoStack: [[BoardElement]] = []
+    /// Undo goes through an `UndoManager`, so on iPad the document's own manager (system undo gestures,
+    /// shake to undo, the edited state that drives autosave) sees every change.
+    var undoManager = UndoManager() { didSet { observeUndo() } }
+    private var undoObservers: [NSObjectProtocol] = []
+    private var pending: [BoardElement]?
+    private var editBefore: [BoardElement]?
     private var lastCoalesce: (key: String, at: Date)?
+    private var previousTool: BoardTool = .select
+    #if os(macOS)
+    weak var window: NSWindow?
+    var closeGuard: WindowCloseGuard?
+    #endif
+
+    init() { observeUndo() }
 
     var title: String { (fileURL?.deletingPathExtension().lastPathComponent ?? "Untitled whiteboard") + (dirty ? " — Edited" : "") }
 
@@ -213,36 +265,54 @@ final class BoardModel: ObservableObject {
     }
 
     // MARK: Undo
-    /// Call before a change. Calls with the same `key` within a second share one undo step (colour sliders).
-    func snapshot(coalesce key: String? = nil) {
-        if let key, let l = lastCoalesce, l.key == key, Date().timeIntervalSince(l.at) < 1 { lastCoalesce = (key, Date()); return }
-        lastCoalesce = key.map { ($0, Date()) }
-        dirtyBeforeSnapshot = dirty
-        undoStack.append(elements)
-        if undoStack.count > 200 { undoStack.removeFirst() }
-        redoStack = []
+    private func observeUndo() {
+        undoObservers.forEach(NotificationCenter.default.removeObserver)
+        let names: [Notification.Name] = [.NSUndoManagerDidUndoChange, .NSUndoManagerDidRedoChange, .NSUndoManagerDidCloseUndoGroup, .NSUndoManagerCheckpoint]
+        undoObservers = names.map { name in
+            NotificationCenter.default.addObserver(forName: name, object: undoManager, queue: .main) { [weak self] _ in self?.syncUndo() }
+        }
+        syncUndo()
+    }
+    private func syncUndo() {
+        if canUndo != undoManager.canUndo { canUndo = undoManager.canUndo }
+        if canRedo != undoManager.canRedo { canRedo = undoManager.canRedo }
+    }
+    private func register(_ old: [BoardElement]) {
+        undoManager.registerUndo(withTarget: self) { $0.restore(old) }
         dirty = true
         syncUndo()
     }
-    /// A click that changed nothing (select, a stray drag) is not an edit: take back its undo step.
-    func dropEmptySnapshot() {
-        guard let last = undoStack.last, last == elements else { return }
-        undoStack.removeLast(); lastCoalesce = nil; dirty = dirtyBeforeSnapshot; syncUndo()
-    }
-    private func syncUndo() { canUndo = !undoStack.isEmpty; canRedo = !redoStack.isEmpty }
-    func undo() {
-        guard let s = undoStack.popLast() else { return }
-        redoStack.append(elements); elements = s; afterHistory()
-    }
-    func redo() {
-        guard let s = redoStack.popLast() else { return }
-        undoStack.append(elements); elements = s; afterHistory()
-    }
-    private func afterHistory() {
-        let ids = Set(elements.map(\.id))
+    private func restore(_ target: [BoardElement]) {
+        let current = elements
+        undoManager.registerUndo(withTarget: self) { $0.restore(current) }
+        elements = target
+        let ids = Set(target.map(\.id))
         selection = selection.intersection(ids)
         if let e = editing, !ids.contains(e) { editing = nil }
-        lastCoalesce = nil; dirty = true; syncUndo()
+        lastCoalesce = nil; dirty = true
+    }
+    func undo() { endEditing(); undoManager.undo(); syncUndo() }
+    func redo() { undoManager.redo(); syncUndo() }
+
+    /// A change made by a drag: `beginChange` when it starts, `commitChange` when it ends; one undo step
+    /// if the board really changed, none for a click that did nothing.
+    func beginChange() { pending = elements }
+    func commitChange() {
+        guard let before = pending else { return }
+        pending = nil
+        if before != elements { register(before) }
+    }
+    func discardPending() { pending = nil }
+    func abortChange() {
+        guard let before = pending else { return }
+        pending = nil; elements = before
+        selection = selection.intersection(Set(before.map(\.id)))
+    }
+    /// A one-shot change (delete, duplicate, arrange, paste): one undo step if anything changed.
+    func edit(_ body: () -> Void) {
+        let before = elements
+        body()
+        if before != elements { register(before) }
     }
 
     // MARK: Editing
@@ -260,7 +330,7 @@ final class BoardModel: ObservableObject {
         e.stroke = stroke; e.lineWidth = lineWidth; e.fontSize = fontSize
         switch kind {
         case .line, .arrow, .pen: e.points = [[p.x, p.y]]
-        case .text: e.x = p.x; e.y = p.y; e.w = 240; e.h = fontSize * 1.4; e.stroke = stroke
+        case .text: e.x = p.x; e.y = p.y; e.w = 240; e.h = fontSize * 1.4
         case .sticky: e.x = p.x - 80; e.y = p.y - 80; e.w = 160; e.h = 160; e.fill = .hex(0xFFE56B)
         default: e.x = p.x; e.y = p.y; e.fill = fill
         }
@@ -270,10 +340,17 @@ final class BoardModel: ObservableObject {
     /// Grow a text element to fit what was typed.
     func fitText(_ id: UUID) {
         guard let i = index(id), elements[i].kind == .text else { return }
-        let font = NSFont.systemFont(ofSize: elements[i].fontSize)
+        let font = PlatformFont.systemFont(ofSize: elements[i].fontSize)
         let s = elements[i].text.isEmpty ? " " : elements[i].text
-        let box = (s as NSString).boundingRect(with: CGSize(width: elements[i].w, height: 10_000), options: [.usesLineFragmentOrigin], attributes: [.font: font])
+        let box = (s as NSString).boundingRect(with: CGSize(width: elements[i].w, height: 10_000), options: [.usesLineFragmentOrigin], attributes: [.font: font], context: nil)
         elements[i].h = max(elements[i].fontSize * 1.4, ceil(box.height) + 4)
+    }
+
+    /// Start typing into `id`; what changes until `endEditing` is one undo step.
+    func startEditing(_ id: UUID, before: [BoardElement]? = nil) {
+        editBefore = before ?? elements
+        selection = [id]
+        editing = id
     }
 
     func endEditing() {
@@ -281,26 +358,28 @@ final class BoardModel: ObservableObject {
         editing = nil
         if let e = element(id), e.kind == .text, e.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             elements.removeAll { $0.id == id }; selection.remove(id)
-            dropEmptySnapshot()
         }
+        if let before = editBefore, before != elements { register(before) }
+        editBefore = nil
     }
 
     func deleteSelection() {
         guard !selection.isEmpty else { return }
-        snapshot(); editing = nil
-        elements.removeAll { selection.contains($0.id) }
+        endEditing()
+        edit { elements.removeAll { selection.contains($0.id) } }
         selection = []
     }
 
     func duplicateSelection() {
         guard !selection.isEmpty else { return }
-        snapshot()
-        var copies: [BoardElement] = []
-        for e in elements where selection.contains(e.id) {
-            var c = e; c.id = UUID(); c.move(by: CGSize(width: 24, height: 24)); copies.append(c)
+        edit {
+            var copies: [BoardElement] = []
+            for e in elements where selection.contains(e.id) {
+                var c = e; c.id = UUID(); c.move(by: CGSize(width: 24, height: 24)); copies.append(c)
+            }
+            elements += copies
+            selection = Set(copies.map(\.id))
         }
-        elements += copies
-        selection = Set(copies.map(\.id))
     }
 
     func selectAll() { selection = Set(elements.map(\.id)) }
@@ -309,15 +388,21 @@ final class BoardModel: ObservableObject {
     func sendToBack() { arrange(front: false) }
     private func arrange(front: Bool) {
         guard !selection.isEmpty else { return }
-        snapshot()
-        let chosen = elements.filter { selection.contains($0.id) }, rest = elements.filter { !selection.contains($0.id) }
-        elements = front ? rest + chosen : chosen + rest
+        edit {
+            let chosen = elements.filter { selection.contains($0.id) }, rest = elements.filter { !selection.contains($0.id) }
+            elements = front ? rest + chosen : chosen + rest
+        }
     }
 
+    /// Change the selected elements; calls with the same `key` within a second (a colour slider) share one undo step.
     func apply(_ change: (inout BoardElement) -> Void, key: String) {
         guard !selection.isEmpty else { return }
-        snapshot(coalesce: key)
+        let before = elements
         for i in elements.indices where selection.contains(elements[i].id) { change(&elements[i]) }
+        guard before != elements else { return }
+        if let l = lastCoalesce, l.key == key, Date().timeIntervalSince(l.at) < 1 { lastCoalesce = (key, Date()); dirty = true; return }
+        lastCoalesce = (key, Date())
+        register(before)
     }
     func setFill(_ c: BoardColor) { fill = c; apply({ $0.fill = c }, key: "fill") }
     func setStroke(_ c: BoardColor) { stroke = c; apply({ $0.stroke = c }, key: "stroke") }
@@ -328,113 +413,33 @@ final class BoardModel: ObservableObject {
         for id in selection { fitText(id) }
     }
 
-    // MARK: Window
-    private static var all = NSHashTable<BoardModel>.weakObjects()
-    static var openBoards: [BoardModel] { all.allObjects }
-    private(set) weak var window: NSWindow?
-    private var closeGuard: WindowCloseGuard?
-
-    /// Once the SwiftUI window exists: ask before it closes with unsaved edits, show the edited dot.
-    func attach(to window: NSWindow) {
-        guard self.window !== window else { return }
-        self.window = window
-        Self.all.add(self)
-        let guardian = WindowCloseGuard(confirm: { [weak self] in self?.confirmDiscardingChanges() ?? true }, original: window.delegate)
-        closeGuard = guardian
-        window.delegate = guardian
-        window.isDocumentEdited = dirty
-        window.representedURL = fileURL
+    /// Apple Pencil double-tap / squeeze: switch to the eraser and back.
+    func togglePencilEraser() {
+        if tool == .eraser { tool = previousTool } else { previousTool = tool == .select ? .pen : tool; tool = .eraser }
     }
 
-    /// Before the board goes away (window closed, app quit, another file opened): Save / Don't Save / Cancel
-    /// when it has edits. False when the user cancelled or saving failed.
-    func confirmDiscardingChanges() -> Bool {
-        endEditing()
-        guard dirty else { return true }
-        let alert = NSAlert()
-        alert.messageText = "Do you want to save the changes you made to “\(fileURL?.deletingPathExtension().lastPathComponent ?? "Untitled whiteboard")”?"
-        alert.informativeText = "Your changes will be lost if you don’t save them."
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Don’t Save")
-        alert.addButton(withTitle: "Cancel")
-        switch runSheet(alert) {
-        case .alertFirstButtonReturn: save(); return !dirty
-        case .alertSecondButtonReturn: return true
-        default: return false
+    func doubleClick(at p: CGPoint) {
+        guard tool == .select else { return }
+        if let id = hitTest(p), let e = element(id), !e.isLinear {
+            startEditing(id)
+        } else if hitTest(p) == nil {
+            let before = elements
+            let e = newElement(.text, at: p)
+            add(e)
+            startEditing(e.id, before: before)
         }
     }
 
-    // Sheets on the board's window: a free-standing modal opens on another Space when the window is full screen.
-    private func runSheet(_ alert: NSAlert) -> NSApplication.ModalResponse {
-        guard let window, window.isVisible, window.attachedSheet == nil else { return alert.runModal() }
-        window.makeKeyAndOrderFront(nil)
-        alert.beginSheetModal(for: window) { NSApp.stopModal(withCode: $0) }
-        return NSApp.runModal(for: alert.window)
-    }
-    private func runSheet(_ panel: NSSavePanel) -> NSApplication.ModalResponse {
-        guard let window, window.isVisible, window.attachedSheet == nil else { return panel.runModal() }
-        window.makeKeyAndOrderFront(nil)
-        panel.beginSheetModal(for: window) { NSApp.stopModal(withCode: $0) }
-        return NSApp.runModal(for: panel)
+    // MARK: File format
+    func encoded() throws -> Data {
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return try enc.encode(BoardFile(elements: elements))
     }
 
-    // MARK: Files
-    func save() { if let url = fileURL { write(to: url) } else { saveAs() } }
-
-    func saveAs() {
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.init(filenameExtension: "cobrainboard")].compactMap { $0 }
-        panel.nameFieldStringValue = (fileURL?.lastPathComponent ?? "Untitled.cobrainboard")
-        guard runSheet(panel) == .OK, let url = panel.url else { return }
-        write(to: url)
-    }
-
-    private func write(to url: URL) {
-        do {
-            let enc = JSONEncoder()
-            enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-            try enc.encode(BoardFile(elements: elements)).write(to: url, options: .atomic)
-            fileURL = url; dirty = false; window?.representedURL = url
-        } catch {
-            let a = NSAlert(); a.messageText = "Could not save \(url.lastPathComponent)"; a.informativeText = error.localizedDescription; a.runModal()
-        }
-    }
-
-    func open() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.init(filenameExtension: "cobrainboard")].compactMap { $0 }
-        guard confirmDiscardingChanges(), runSheet(panel) == .OK, let url = panel.url else { return }
-        open(url)
-    }
-
-    func open(_ url: URL) {
-        do {
-            let f = try JSONDecoder().decode(BoardFile.self, from: Data(contentsOf: url))
-            elements = f.elements; selection = []; editing = nil; fileURL = url; dirty = false
-            undoStack = []; redoStack = []; syncUndo(); fitContent()
-        } catch {
-            let a = NSAlert(); a.messageText = "Could not open \(url.lastPathComponent)"; a.informativeText = error.localizedDescription; a.runModal()
-        }
-    }
-
-    @MainActor func exportPNG() {
-        guard let first = elements.first else { return }
-        let box = elements.dropFirst().reduce(first.frame) { $0.union($1.frame) }.insetBy(dx: -40, dy: -40)
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.png]
-        panel.nameFieldStringValue = (fileURL?.deletingPathExtension().lastPathComponent ?? "Whiteboard") + ".png"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        let items = elements
-        let view = Canvas { ctx, _ in
-            ctx.translateBy(x: -box.minX, y: -box.minY)
-            for e in items { BoardDrawing.draw(e, in: &ctx) }
-        }
-        .frame(width: box.width, height: box.height).background(Color.white)
-        let renderer = ImageRenderer(content: view)
-        renderer.scale = 2
-        if let img = renderer.nsImage, let tiff = img.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
-           let png = rep.representation(using: .png, properties: [:]) {
-            try? png.write(to: url)
-        }
+    func load(_ data: Data) throws {
+        elements = try JSONDecoder().decode(BoardFile.self, from: data).elements
+        selection = []; editing = nil; dirty = false
+        undoManager.removeAllActions(); syncUndo()
     }
 }

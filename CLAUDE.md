@@ -20,6 +20,9 @@ The rest of this file (below "WordCraft rules") is upstream's and still governs 
 - **Icons** are WordCraft's own code-drawn set (`crates/ui-egui/src/icons.rs`), exported to `macos/Resources/icons/*.png` with `crates/ui-egui/examples/icon_sheet.rs` + `macos/tools/gen_icons.py` (needs numpy + pillow in a venv). Never use Microsoft/Adobe artwork; keep upstream's asset rules (below).
 - New engine data the UI needs goes through `crates/cobrain-ffi` (the only crate allowed `unsafe`; keep `catch_unwind` guards, no panics) and `macos/Sources/CCobrain/include/cobrain.h`.
 
+## iPad app (Cobrain Board)
+`ios/` is an XcodeGen project (`ios/project.yml`) for an iPad whiteboard app: a document-based app (`.cobrainboard`, autosave, Files/iCloud) that shares `macos/Sources/Cobrain/Board/` with the Mac whiteboard (model, drawing, input logic; no UIKit/AppKit there except behind `#if`). `ios/scripts/build-sim.sh` builds for the simulator; `-demo file.cobrainboard` as launch argument opens a board without the document browser. Apple Pencil: pressure ink, double-tap/squeeze toggles the eraser, a finger scrolls (toggle in the palette), palm rejection. The word processor is not on iPad yet (needs the Rust engine built for `aarch64-apple-ios` and a UIKit page view).
+
 ## Status
 Done and checked against the reference screenshots:
 - Open/save (.docx etc.), page rendering, typing, deleting, arrows, undo/redo, system clipboard, print/PDF export, multiple windows, AutoSave.

@@ -13,3 +13,7 @@ plan/
 macos/.build/
 macos/build/
 .DS_Store
+
+# Cobrain Board (iPad)
+ios/*.xcodeproj
+ios/build/
