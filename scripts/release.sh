@@ -74,5 +74,6 @@ fi
 # --- publish
 run git push origin main
 run git push origin "$TAG"
-run gh release create "$TAG" ${ASSET:+"$ASSET"} --title "Cobrain $NEXT" --notes-file "$NOTES" --verify-tag
+# --repo: in a fork `gh` would otherwise pick the upstream repository
+run gh release create "$TAG" --repo "$(git remote get-url origin)" ${ASSET:+"$ASSET"} --title "Cobrain $NEXT" --notes-file "$NOTES" --verify-tag
 echo "Released Cobrain $NEXT"
