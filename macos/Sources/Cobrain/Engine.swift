@@ -36,7 +36,14 @@ final class Engine {
     /// Words added with Add to Dictionary, kept across launches.
     static let supportFolder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Cobrain")
 
+    /// The signed-in profile name goes on new comments and tracked changes.
+    private func applyProfileName() {
+        let name = AccountStore.profileName
+        if !name.isEmpty { _ = run("file.setAuthor", ["name": name]) }
+    }
+
     private func useUserDictionary() {
+        applyProfileName()
         try? FileManager.default.createDirectory(at: Self.supportFolder, withIntermediateDirectories: true)
         _ = cobrain_use_user_dictionary(handle, Self.supportFolder.path)
     }

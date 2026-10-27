@@ -12,6 +12,7 @@ struct HomeView: View {
     @State private var toDelete: Subject?
     @State private var failed: String?
     @State private var picking = false
+    @State private var showAccount = false
 
     private let columns = [GridItem(.adaptive(minimum: 150, maximum: 190), spacing: 20, alignment: .top)]
     private let shelfColumns = [GridItem(.adaptive(minimum: 170, maximum: 200), spacing: 12, alignment: .top)]
@@ -65,8 +66,10 @@ struct HomeView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Cobrain")
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) { Button { showAccount = true } label: { AccountAvatar() } }
             ToolbarItem(placement: .topBarTrailing) { Button { importing = true } label: { Label("Open…", systemImage: "folder") } }
         }
+        .sheet(isPresented: $showAccount) { AccountView { showAccount = false }.presentationDetents([.medium]) }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.cobrainBoard, .rtf, .plainText, .html, .data], allowsMultipleSelection: false) { r in
             guard case .success(let urls) = r, let url = urls.first else { return }
             if let u = library.importFile(url) { path.append(FileKind(url: u) == .board ? .board(u) : .word(u)) } else { failed = "Cobrain can’t open “\(url.lastPathComponent)”." }

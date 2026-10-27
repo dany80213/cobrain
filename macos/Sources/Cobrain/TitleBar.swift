@@ -54,6 +54,7 @@ struct TitleActions: View {
             }.menuStyle(.borderlessButton).fixedSize()
             Button { model.share() } label: { Label("Share", systemImage: "square.and.arrow.up") }
                 .buttonStyle(.bordered)
+            AccountButton()
         }
     }
 }
@@ -122,5 +123,15 @@ struct BackstageView: View {
         case "Print": model.showBackstage = false; model.printDocument()
         default: loadInfo()
         }
+    }
+}
+
+/// Title bar: guest or signed-in profile.
+struct AccountButton: View {
+    @State private var open = false
+    var body: some View {
+        Button { open.toggle() } label: { AccountAvatar() }
+            .buttonStyle(.plain).help("Account")
+            .popover(isPresented: $open, arrowEdge: .bottom) { AccountView { open = false } }
     }
 }
