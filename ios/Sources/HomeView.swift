@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 
 let documentTemplates: [(label: String, id: String)] = [("Blank document", "blank"), ("Studio handbook", "sample"), ("Letter", "letter"), ("Résumé", "resume"), ("Report", "report")]
 
-/// Cobrain Home on iPad: your subjects as notebooks on a shelf, then new files and recent ones.
+/// Cobrain Home on iPad: your subjects as notebooks, then new files and recent ones.
 struct HomeView: View {
     @ObservedObject var library: Library
     @Binding var path: [Route]
@@ -27,14 +27,14 @@ struct HomeView: View {
                 section("Subjects") {
                     LazyVGrid(columns: shelfColumns, alignment: .leading, spacing: 26) {
                         ForEach(library.subjects) { s in
-                            Button { path.append(.subject(s.url)) } label: { NotebookCover(name: s.name, style: s.style, count: s.count, width: 150).shelf() }
+                            Button { path.append(.subject(s.url)) } label: { NotebookCover(name: s.name, style: s.style, count: s.count, width: 150).padding(.bottom, 4) }
                                 .buttonStyle(.plain)
                                 .contextMenu {
                                     Button { editing = SubjectSheet(subject: s) } label: { Label("Customize…", systemImage: "paintbrush") }
                                     Button(role: .destructive) { toDelete = s } label: { Label("Delete", systemImage: "trash") }
                                 }
                         }
-                        Button { editing = SubjectSheet(subject: nil) } label: { NewNotebookTile(width: 150).shelf() }.buttonStyle(.plain)
+                        Button { editing = SubjectSheet(subject: nil) } label: { NewNotebookTile(width: 150).padding(.bottom, 4) }.buttonStyle(.plain)
                     }
                 }
                 section("New") {

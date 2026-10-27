@@ -212,12 +212,3 @@ struct SubjectEditor: View {
     }
 }
 
-extension View {
-    /// A shelf board under a notebook.
-    func shelf() -> some View {
-        self.padding(.bottom, 10).background(alignment: .bottom) {
-            RoundedRectangle(cornerRadius: 3).fill(LinearGradient(colors: [Color(red: 0.76, green: 0.62, blue: 0.46), Color(red: 0.62, green: 0.48, blue: 0.34)], startPoint: .top, endPoint: .bottom))
-                .frame(height: 10).padding(.horizontal, -8).shadow(color: .black.opacity(0.18), radius: 2, y: 2)
-        }
-    }
-}

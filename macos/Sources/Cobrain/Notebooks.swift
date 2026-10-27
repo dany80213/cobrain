@@ -21,7 +21,7 @@ enum SubjectFiles {
     }
 }
 
-/// Home › Subjects: the current project's subjects as notebooks on a shelf.
+/// Home › Subjects: the current project's subjects.
 struct SubjectsShelf: View {
     @ObservedObject var store: ProjectStore = .shared
     @Binding var openSubject: URL?
@@ -45,7 +45,7 @@ struct SubjectsShelf: View {
                     HStack(alignment: .top, spacing: 22) {
                         ForEach(subjects) { s in
                             Button { openSubject = s.url } label: {
-                                NotebookCover(name: s.name, style: SubjectStyle.load(from: s.url), count: SubjectFiles.list(s.url).count, width: 120).shelf()
+                                NotebookCover(name: s.name, style: SubjectStyle.load(from: s.url), count: SubjectFiles.list(s.url).count, width: 120).padding(.bottom, 4)
                             }
                             .buttonStyle(.plain)
                             .contextMenu {
@@ -56,7 +56,7 @@ struct SubjectsShelf: View {
                                 Button("Move to Trash…") { toTrash = s.url }
                             }
                         }
-                        Button { editing = EditTarget(url: nil) } label: { NewNotebookTile(width: 120).shelf() }.buttonStyle(.plain)
+                        Button { editing = EditTarget(url: nil) } label: { NewNotebookTile(width: 120).padding(.bottom, 4) }.buttonStyle(.plain)
                     }
                     .padding(.horizontal, 10).padding(.bottom, 4)
                 }

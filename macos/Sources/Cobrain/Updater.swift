@@ -60,6 +60,35 @@ final class Updater: ObservableObject {
         }
         if case .updating = state { return }
         state = .checking
+        // Ask the source folder's own git first: it works for builds made from commits that aren't on GitHub yet
+        // (the API answers 404 for those, so the button never appeared) and doesn't depend on the API at all.
+        if let dir = sourceDir {
+            DispatchQueue.global(qos: .utility).async {
+                let fetched = Self.shell("git fetch --quiet origin main", in: dir).ok
+                let count = Self.shell("git rev-list --count \(built)..origin/main", in: dir)
+                let behind = Int(count.output.trimmingCharacters(in: .whitespacesAndNewlines))
+                let latest = Self.shell("git rev-parse origin/main", in: dir).output.trimmingCharacters(in: .whitespacesAndNewlines)
+                DispatchQueue.main.async {
+                    if fetched, count.ok, let behind { self.finishCheck(behind: behind, latest: latest, userInitiated: userInitiated) }
+                    else { self.checkViaGitHub(built: built, userInitiated: userInitiated) }
+                }
+            }
+        } else {
+            checkViaGitHub(built: built, userInitiated: userInitiated)
+        }
+    }
+
+    private func finishCheck(behind: Int, latest: String, userInitiated: Bool) {
+        if behind > 0 {
+            state = .available(behind: behind, latest: latest)
+            if userInitiated { offerUpdate() } else { notifyOnce(behind: behind, latest: latest) }
+        } else {
+            state = .upToDate
+            if userInitiated { Self.tell("Cobrain is up to date", "You have the latest version from GitHub.") }
+        }
+    }
+
+    private func checkViaGitHub(built: String, userInitiated: Bool) {
         guard let url = URL(string: "https://api.github.com/repos/\(Self.repo)/compare/\(built)...main") else { return }
         var req = URLRequest(url: url)
         req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
@@ -117,22 +146,26 @@ final class Updater: ObservableObject {
         Self.ask(alert) { if $0 == .alertFirstButtonReturn { self.update() } }
     }
 
-    /// `git pull --ff-only` on main, then the build script; only on a clean `main`, so work in
-    /// progress in the source folder is never touched.
+    /// Brings the source folder up to date with GitHub's `main` and rebuilds. A branch that is only behind moves
+    /// forward; one with commits of its own gets `main` merged in (a merge that conflicts is undone and reported).
+    /// Never with uncommitted changes in the folder, so work in progress is never touched.
     func update() {
         guard let dir = sourceDir else { return }
         state = .updating("Checking the source folder…")
         DispatchQueue.global(qos: .userInitiated).async {
-            let branch = Self.shell("git rev-parse --abbrev-ref HEAD", in: dir).output.trimmingCharacters(in: .whitespacesAndNewlines)
             let dirty = !Self.shell("git status --porcelain --untracked-files=no", in: dir).output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            if branch != "main" || dirty {
-                let why = branch != "main" ? "is on the branch “\(branch)”" : "has changes that aren’t committed"
-                Self.finish(.failed("Cobrain can’t update itself because its source folder (\(dir.path)) \(why). Switch it to main without changes (git switch main), then try again."))
+            if dirty {
+                Self.finish(.failed("Cobrain can’t update itself because its source folder (\(dir.path)) has changes that aren’t committed. Commit or stash them, then try again."))
                 return
             }
             DispatchQueue.main.async { self.state = .updating("Downloading changes…") }
-            let pull = Self.shell("git pull --ff-only origin main", in: dir)
-            guard pull.ok else { Self.finish(.failed("Downloading the changes failed. Details are in \(Self.logURL.path).")); return }
+            guard Self.shell("git fetch origin main", in: dir).ok else { Self.finish(.failed("Downloading the changes failed (no connection?). Details are in \(Self.logURL.path).")); return }
+            let merge = Self.shell("git merge --no-edit origin/main", in: dir)
+            guard merge.ok else {
+                _ = Self.shell("git merge --abort", in: dir)
+                Self.finish(.failed("The new changes conflict with changes in this copy, so nothing was changed. Merge origin/main into the source folder by hand. Details are in \(Self.logURL.path)."))
+                return
+            }
             DispatchQueue.main.async { self.state = .updating("Building… (a few minutes)") }
             let build = Self.shell("CARGO_BUILD_JOBS=6 nice -n 10 macos/scripts/build-app.sh", in: dir)
             guard build.ok else { Self.finish(.failed("Building the new version failed. Details are in \(Self.logURL.path).")); return }
@@ -182,7 +215,7 @@ final class Updater: ObservableObject {
         p.currentDirectoryURL = dir
         var env = ProcessInfo.processInfo.environment
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        env["PATH"] = "\(home)/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        env["PATH"] = "\(home)/.cargo/bin:/opt/homebrew/opt/rustup/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         p.environment = env
         let pipe = Pipe()
         p.standardOutput = pipe
