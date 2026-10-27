@@ -28,6 +28,9 @@ The rest of this file (below "WordCraft rules") is upstream's and still governs 
 - Templates: `macos/Sources/Cobrain/Shared/Templates.swift` (both apps): built-in document templates (blocks written through engine commands, Italian or English by locale) and whiteboard templates (lists of shapes), for every subject or for a kind of subject (`SubjectKind`, from the subject's name), plus your own: File › Save as Template… keeps a copy in `<project>/.cobrain-templates/_all|<Subject>/`. `TemplateGallery` is the picker (Mac: subject view and Home › More Templates…; iPad: Home and subject view).
 - Whiteboard: Apple Pencil pressure ink, double-tap/squeeze toggles the eraser, a finger scrolls (palette toggle lets it draw), palm rejection, autosave.
 
+## Versions and releases
+`VERSION` (repo root) is the version of Cobrain (semantic: MAJOR breaks saved files or workflows, MINOR adds features, PATCH fixes); the Mac build script and the iPad scripts put it into the app (`CFBundleShortVersionString`; the build number is the commit count). Keep `CHANGELOG.md` current. `scripts/release.sh patch|minor|major|X.Y.Z` (from a clean, up-to-date `main`): bumps `VERSION`, writes the changelog section (or uses the one you wrote), commits, tags `cobrain-vX.Y.Z` (the prefix keeps clear of WordCraft's own `vX.Y.Z` tags), builds and zips the Mac app, pushes, and creates the GitHub release. `--dry-run` shows the steps without doing them.
+
 ## Status
 Done and checked against the reference screenshots:
 - Open/save (.docx etc.), page rendering, typing, deleting, arrows, undo/redo, system clipboard, print/PDF export, multiple windows, AutoSave.
