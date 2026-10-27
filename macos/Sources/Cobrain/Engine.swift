@@ -34,7 +34,7 @@ final class Engine {
     }
 
     /// Words added with Add to Dictionary, kept across launches.
-    static let supportFolder = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Cobrain")
+    static let supportFolder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Cobrain")
 
     private func useUserDictionary() {
         try? FileManager.default.createDirectory(at: Self.supportFolder, withIntermediateDirectories: true)

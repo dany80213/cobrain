@@ -351,7 +351,13 @@ struct ProjectsPane: View {
         return Label {
             Text(item.name).foregroundStyle(open ? Color.accentColor : Color.primary)
         } icon: {
-            Image(systemName: item.icon).foregroundStyle(item.isFolder ? Color.accentColor : Color.secondary)
+            if item.isFolder && item.depth == 0 {
+                // A subject keeps the colour and symbol of its notebook.
+                let look = SubjectStyle.load(from: item.url)
+                Image(systemName: look.symbol).foregroundStyle(Color(nb: look.color))
+            } else {
+                Image(systemName: item.icon).foregroundStyle(item.isFolder ? Color.accentColor : Color.secondary)
+            }
         }
             .fontWeight(item.depth == 0 && item.isFolder ? .semibold : (open ? .semibold : .regular))
             .frame(maxWidth: .infinity, alignment: .leading)

@@ -13,6 +13,7 @@ targets:
     sources:
       - path: Sources
       - path: ../macos/Sources/Cobrain/Board
+      - path: ../macos/Sources/Cobrain/Shared
       - path: ../macos/Sources/Cobrain/Engine.swift
       - path: ../macos/Resources/icons
         type: folder

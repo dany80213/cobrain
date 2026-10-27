@@ -8,6 +8,7 @@ extension UTType {
 enum Route: Hashable {
     case word(URL)
     case board(URL)
+    case subject(URL)
 }
 
 @main
@@ -23,6 +24,7 @@ struct CobrainApp: App {
                         switch route {
                         case .word(let url): WordScreen(url: url, library: library)
                         case .board(let url): BoardScreen(url: url, library: library)
+                        case .subject(let url): SubjectScreen(url: url, library: library, path: $path)
                         }
                     }
             }

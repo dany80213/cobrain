@@ -5,9 +5,11 @@ import SwiftUI
 struct BoardRoot: View {
     @StateObject private var board: BoardModel
 
-    init() { _board = StateObject(wrappedValue: BoardModel()) }
+    private let url: URL?
+
+    init(url: URL? = nil) { _board = StateObject(wrappedValue: BoardModel()); self.url = url }
     /// Snapshot mode: show an existing model.
-    init(preview: BoardModel) { _board = StateObject(wrappedValue: preview) }
+    init(preview: BoardModel) { _board = StateObject(wrappedValue: preview); url = nil }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,6 +25,7 @@ struct BoardRoot: View {
         .background(WindowAccessor { board.attach(to: $0) })
         .navigationTitle(board.title)
         .focusedSceneObject(board)
+        .onAppear { if let url, board.fileURL == nil { board.open(url) } }
     }
 }
 

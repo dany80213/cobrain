@@ -111,7 +111,7 @@ struct CobrainApp: App {
     var body: some Scene {
         WindowGroup(id: "document") { WindowRoot(url: nil) }
         .commands { CobrainCommands() }
-        WindowGroup("Whiteboard", id: "whiteboard") { BoardRoot() }
+        WindowGroup("Whiteboard", id: "whiteboard", for: BoardRef.self) { $ref in BoardRoot(url: ref?.url) }
     }
 }
 

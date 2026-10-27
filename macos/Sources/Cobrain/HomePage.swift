@@ -6,6 +6,7 @@ struct HomePage: View {
     @ObservedObject var model: DocumentModel
     @Environment(\.openWindow) private var openWindow
     @State private var recent: [URL] = NSDocumentController.shared.recentDocumentURLs
+    @State private var openSubject: URL?
 
     private static let templates: [(label: String, id: String)] = [
         ("Blank document", "blank"), ("Studio handbook (sample)", "sample"), ("Letter", "letter"), ("Résumé", "resume"), ("Report", "report")]
@@ -16,9 +17,18 @@ struct HomePage: View {
     }
 
     var body: some View {
+        if let folder = openSubject {
+            SubjectDetail(model: model, folder: folder) { openSubject = nil }
+        } else {
+            home
+        }
+    }
+
+    private var home: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Text(greeting).font(.system(size: 26, weight: .semibold))
+                SubjectsShelf(openSubject: $openSubject).padding(.bottom, 6)
                 HStack(alignment: .top, spacing: 18) {
                     ForEach(Self.templates.prefix(4), id: \.id) { t in
                         TemplateTile(label: t.label, template: t.id) { model.newDocument(template: t.id); model.showBackstage = false }
