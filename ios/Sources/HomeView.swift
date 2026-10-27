@@ -11,6 +11,7 @@ struct HomeView: View {
     @State private var editing: SubjectSheet?
     @State private var toDelete: Subject?
     @State private var failed: String?
+    @State private var picking = false
 
     private let columns = [GridItem(.adaptive(minimum: 150, maximum: 190), spacing: 20, alignment: .top)]
     private let shelfColumns = [GridItem(.adaptive(minimum: 170, maximum: 200), spacing: 12, alignment: .top)]
@@ -47,6 +48,7 @@ struct HomeView: View {
                         Tile(title: "Whiteboard", subtitle: nil, image: nil, symbol: "scribble.variable") {
                             if let u = library.newBoard() { path.append(.board(u)) } else { failed = "Could not create the whiteboard" }
                         }
+                        Tile(title: "More templates", subtitle: "For every subject and yours", image: nil, symbol: "square.grid.2x2") { picking = true }
                     }
                 }
                 section("Recent") {
@@ -68,6 +70,12 @@ struct HomeView: View {
         .fileImporter(isPresented: $importing, allowedContentTypes: [.cobrainBoard, .rtf, .plainText, .html, .data], allowsMultipleSelection: false) { r in
             guard case .success(let urls) = r, let url = urls.first else { return }
             if let u = library.importFile(url) { path.append(FileKind(url: u) == .board ? .board(u) : .word(u)) } else { failed = "Cobrain can’t open “\(url.lastPathComponent)”." }
+        }
+        .sheet(isPresented: $picking) {
+            TemplateGallery(subject: nil, root: library.folder) { t in
+                picking = false
+                if let u = TemplateWriter.create(t, in: library.folder, subject: "") { library.reload(); path.append(FileKind(url: u) == .board ? .board(u) : .word(u)) } else { failed = "Could not create the file" }
+            } onCancel: { picking = false }
         }
         .sheet(item: $editing) { sheet in
             SubjectEditor(isNew: sheet.subject == nil, name: sheet.subject?.name ?? "", style: sheet.subject?.style ?? SubjectStyle.guess(for: "")) { name, style in
@@ -137,12 +145,13 @@ struct Tile: View {
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 6) {
-                ZStack {
-                    Color.white
-                    if let image { Image(uiImage: image).resizable().scaledToFill() }
-                    else { Image(systemName: symbol).font(.system(size: 38)).foregroundStyle(.secondary) }
-                }
-                .frame(height: 194).frame(maxWidth: .infinity).clipped()
+                Color.white
+                    .frame(height: 194).frame(maxWidth: .infinity)
+                    .overlay {
+                        if let image { Image(uiImage: image).resizable().aspectRatio(contentMode: symbol == "scribble.variable" ? .fit : .fill) }
+                        else { Image(systemName: symbol).font(.system(size: 38)).foregroundStyle(.secondary) }
+                    }
+                    .clipped()
                 .clipShape(RoundedRectangle(cornerRadius: 6))
                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.gray.opacity(0.35)))
                 .shadow(color: .black.opacity(0.08), radius: 4, y: 2)
@@ -162,6 +171,7 @@ struct SubjectScreen: View {
     @State private var editing: SubjectSheet?
     @State private var importing = false
     @State private var failed: String?
+    @State private var picking = false
     private let columns = [GridItem(.adaptive(minimum: 150, maximum: 190), spacing: 20, alignment: .top)]
 
     private var subject: Subject? { library.subjects.first { $0.url.standardizedFileURL == url.standardizedFileURL } }
@@ -176,11 +186,7 @@ struct SubjectScreen: View {
                             Text(s.name).font(.system(size: 30, weight: .semibold))
                             Text(s.count == 1 ? "1 file" : "\(s.count) files").foregroundStyle(.secondary)
                             HStack {
-                                Menu {
-                                    ForEach(documentTemplates, id: \.id) { t in
-                                        Button(t.label) { if let u = library.newDocument(template: t.id, in: s.url) { path.append(.word(u)) } }
-                                    }
-                                } label: { Label("New Document", systemImage: "doc.badge.plus") }
+                                Button { picking = true } label: { Label("New from Template", systemImage: "doc.badge.plus") }
                                 Button { if let u = library.newBoard(in: s.url) { path.append(.board(u)) } } label: { Label("New Whiteboard", systemImage: "scribble.variable") }
                                 Button { importing = true } label: { Label("Import…", systemImage: "square.and.arrow.down") }
                             }
@@ -218,6 +224,14 @@ struct SubjectScreen: View {
                 editing = nil
             } onCancel: { editing = nil }
             .presentationDetents([.large])
+        }
+        .sheet(isPresented: $picking) {
+            if let s = subject {
+                TemplateGallery(subject: s.name, root: library.folder) { t in
+                    picking = false
+                    if let u = TemplateWriter.create(t, in: s.url, subject: s.name) { library.reload(); path.append(FileKind(url: u) == .board ? .board(u) : .word(u)) } else { failed = "Could not create the file" }
+                } onCancel: { picking = false }
+            }
         }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.cobrainBoard, .rtf, .plainText, .html, .data], allowsMultipleSelection: false) { r in
             guard case .success(let urls) = r, let picked = urls.first, let s = subject else { return }

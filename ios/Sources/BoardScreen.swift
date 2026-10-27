@@ -8,6 +8,7 @@ struct BoardScreen: View {
     @Environment(\.scenePhase) private var phase
     @State private var saveWork: DispatchWorkItem?
     @State private var loaded = false
+    @State private var savingTemplate = false
 
     var body: some View {
         BoardPadView(board: board)
@@ -26,6 +27,19 @@ struct BoardScreen: View {
             .onChange(of: board.elements) { _, _ in scheduleSave() }
             .onChange(of: phase) { _, p in if p != .active { saveNow(final: true) } }
             .onDisappear { saveNow(final: true); library.reload() }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu { Button { savingTemplate = true } label: { Label("Save as Template…", systemImage: "square.and.arrow.down.on.square") } } label: { Image(systemName: "ellipsis.circle") }
+                }
+            }
+            .sheet(isPresented: $savingTemplate) {
+                let store = TemplateStore(root: library.folder)
+                SaveTemplateForm(subject: store.subject(of: url), name: url.deletingPathExtension().lastPathComponent) { name, all in
+                    saveNow(final: true)
+                    store.save(copyOf: url, name: name, scope: all ? nil : store.subject(of: url))
+                    savingTemplate = false
+                } onCancel: { savingTemplate = false }
+            }
     }
 
     private func scheduleSave() {

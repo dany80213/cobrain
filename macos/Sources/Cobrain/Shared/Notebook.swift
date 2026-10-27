@@ -35,16 +35,8 @@ struct SubjectStyle: Codable, Equatable, Hashable {
 
     /// A first look from the name (Italian and English): "Matematica" gets a maths symbol, and the colour varies by name.
     static func guess(for name: String) -> SubjectStyle {
-        let n = name.lowercased()
-        let table: [(keys: [String], symbol: String)] = [
-            (["mat", "math", "alge", "geometr", "calcol"], "x.squareroot"), (["ital", "letter", "liter", "lingua", "latin", "grec"], "text.book.closed"),
-            (["stor", "hist"], "building.columns"), (["ingl", "engl", "franc", "french", "spagn", "spanish", "tedesc", "german"], "globe.europe.africa"),
-            (["chim", "chem", "scien", "biolog"], "flask"), (["art", "dise", "draw", "pittur"], "paintpalette"),
-            (["music"], "music.note"), (["ginn", "sport", "motor", "gym", "educazione fisica"], "figure.run"), (["fis", "phys"], "atom"), (["info", "comp", "program", "tecnol", "tech"], "laptopcomputer"),
-            (["geo"], "map"), (["filos", "philos", "relig", "civica"], "theatermasks"), (["natur", "ambient", "agrar"], "leaf"),
-        ]
-        let symbol = table.first { $0.keys.contains { n.contains($0) } }?.symbol ?? "book.closed"
-        let h = n.unicodeScalars.reduce(5381) { ($0 &* 33) &+ Int($1.value) }
+        let symbol = SubjectKind.of(name)?.symbol ?? "book.closed"
+        let h = name.lowercased().unicodeScalars.reduce(5381) { ($0 &* 33) &+ Int($1.value) }
         let patterns = NotebookPattern.allCases
         return SubjectStyle(color: colors[abs(h) % colors.count], pattern: patterns[abs(h / 7) % patterns.count], symbol: symbol)
     }

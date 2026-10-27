@@ -24,6 +24,20 @@ import SwiftUI
         }
         exit(0)
     }
+    if let subject = ProcessInfo.processInfo.environment["COBRAIN_GALLERY"] {
+        let host = NSHostingView(rootView: TemplateGallery(subject: subject == "-" ? nil : subject, root: ProjectStore.defaultRoot, onPick: { _ in }, onCancel: {})
+            .frame(width: 760, height: 900).background(Color(nsColor: .windowBackgroundColor)))
+        host.frame = NSRect(x: 0, y: 0, width: 760, height: 900)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = host
+        RunLoop.main.run(until: Date().addingTimeInterval(1.5))
+        host.layoutSubtreeIfNeeded()
+        if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+            host.cacheDisplay(in: host.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: args[i + 1]))
+        }
+        exit(0)
+    }
     let model = DocumentModel()
     if args.indices.contains(i + 2) { model.open(URL(fileURLWithPath: args[i + 2])) }
     if ProcessInfo.processInfo.environment["COBRAIN_BACKSTAGE"] != nil { model.showBackstage = true }
@@ -111,7 +125,7 @@ struct CobrainApp: App {
     var body: some Scene {
         WindowGroup(id: "document") { WindowRoot(url: nil) }
         .commands { CobrainCommands() }
-        WindowGroup("Whiteboard", id: "whiteboard", for: BoardRef.self) { $ref in BoardRoot(url: ref?.url) }
+        WindowGroup("Whiteboard", id: "whiteboard", for: BoardRef.self) { $ref in BoardRoot(url: ref?.url, template: ref?.template) }
     }
 }
 
@@ -136,6 +150,7 @@ struct CobrainCommands: Commands {
         CommandGroup(replacing: .saveItem) {
             Button("Save") { if let board { board.save() } else { model?.save() } }.keyboardShortcut("s")
             Button("Save As…") { if let board { board.saveAs() } else { model?.saveAs() } }.keyboardShortcut("s", modifiers: [.command, .shift])
+            Button("Save as Template…") { if let board { board.savingTemplate = true } else { model?.savingTemplate = true } }
         }
         CommandGroup(replacing: .undoRedo) {
             Button("Undo") { if let board { board.undo() } else { model?.run("edit.undo") } }.keyboardShortcut("z")

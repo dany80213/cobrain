@@ -17,6 +17,11 @@ struct ContentView: View {
         }
             .navigationTitle(model.title)
             .sheet(item: $model.dialog) { DialogView(kind: $0, model: model) }
+            .sheet(isPresented: $model.savingTemplate) {
+                SaveTemplateForm(subject: model.templateSubject, name: model.fileURL?.deletingPathExtension().lastPathComponent ?? "") { name, all in
+                    model.saveAsTemplate(name: name, forAll: all); model.savingTemplate = false
+                } onCancel: { model.savingTemplate = false }
+            }
             .safeAreaInset(edge: .bottom, spacing: 0) { StatusBar(model: model) }
             .toolbar {
                 ToolbarItemGroup(placement: .navigation) {

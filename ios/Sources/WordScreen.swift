@@ -7,6 +7,7 @@ struct WordScreen: View {
     @ObservedObject var library: Library
     @StateObject private var holder = DocHolder()
     @Environment(\.scenePhase) private var phase
+    @State private var savingTemplate = false
 
     var body: some View {
         Group {
@@ -16,6 +17,19 @@ struct WordScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: phase) { _, p in if p != .active { holder.doc?.saveNow() } }
         .onDisappear { holder.doc?.saveNow(); library.reload() }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu { Button { savingTemplate = true } label: { Label("Save as Template…", systemImage: "square.and.arrow.down.on.square") } } label: { Image(systemName: "ellipsis.circle") }
+            }
+        }
+        .sheet(isPresented: $savingTemplate) {
+            let store = TemplateStore(root: library.folder)
+            SaveTemplateForm(subject: store.subject(of: url), name: url.deletingPathExtension().lastPathComponent) { name, all in
+                holder.doc?.saveNow()
+                store.save(copyOf: url, name: name, scope: all ? nil : store.subject(of: url))
+                savingTemplate = false
+            } onCancel: { savingTemplate = false }
+        }
     }
 }
 

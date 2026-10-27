@@ -50,6 +50,14 @@ extension BoardModel {
         return NSApp.runModal(for: panel)
     }
 
+    /// Keep this board as a template, for every subject or for the one it is in.
+    func saveAsTemplate(name: String, forAll: Bool, root: URL) {
+        if fileURL == nil || dirty { save() }
+        guard let url = fileURL else { return }
+        let store = TemplateStore(root: root)
+        store.save(copyOf: url, name: name, scope: forAll ? nil : store.subject(of: url))
+    }
+
     func save() { if let url = fileURL { write(to: url) } else { saveAs() } }
 
     func saveAs() {

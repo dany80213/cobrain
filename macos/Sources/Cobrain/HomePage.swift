@@ -7,6 +7,7 @@ struct HomePage: View {
     @Environment(\.openWindow) private var openWindow
     @State private var recent: [URL] = NSDocumentController.shared.recentDocumentURLs
     @State private var openSubject: URL?
+    @State private var picking = false
 
     private static let templates: [(label: String, id: String)] = [
         ("Blank document", "blank"), ("Studio handbook (sample)", "sample"), ("Letter", "letter"), ("Résumé", "resume"), ("Report", "report")]
@@ -35,6 +36,7 @@ struct HomePage: View {
                     }
                     WhiteboardTile { openWindow(id: "whiteboard"); model.showBackstage = false }
                 }
+                Button("More Templates…") { picking = true }.buttonStyle(.link)
                 Text("Recent").font(.system(size: 16, weight: .semibold)).padding(.top, 14)
                 if recent.isEmpty {
                     Text("Documents you open will show up here.").foregroundStyle(.secondary)
@@ -57,6 +59,18 @@ struct HomePage: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .onAppear { recent = NSDocumentController.shared.recentDocumentURLs }
+        .sheet(isPresented: $picking) {
+            TemplateGallery(subject: nil, root: ProjectStore.shared.current ?? ProjectStore.defaultRoot) { t in
+                picking = false
+                if t.isBoard {
+                    var ref = BoardRef()
+                    if case .file(let u) = t.source { ref.template = u.path } else { ref.template = t.id }
+                    openWindow(id: "whiteboard", value: ref)
+                    model.showBackstage = false
+                } else { model.newDocument(from: t) }
+            } onCancel: { picking = false }
+            .frame(width: 640, height: 600)
+        }
     }
 }
 

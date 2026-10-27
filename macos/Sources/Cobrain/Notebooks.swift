@@ -4,6 +4,8 @@ import SwiftUI
 /// What opens a whiteboard window: a file, or nothing for a new empty board.
 struct BoardRef: Codable, Hashable {
     var url: URL?
+    /// A template to start from: a built-in id, or the path of one of yours.
+    var template: String?
 }
 
 /// The documents and whiteboards inside a subject folder, newest first (folders inside the subject are searched too).
@@ -107,6 +109,7 @@ struct SubjectDetail: View {
     let close: () -> Void
     @Environment(\.openWindow) private var openWindow
     @State private var refresh = 0
+    @State private var picking = false
 
     private var files: [URL] { _ = refresh; return SubjectFiles.list(folder) }
 
@@ -120,9 +123,7 @@ struct SubjectDetail: View {
                         Text(folder.lastPathComponent).font(.system(size: 26, weight: .semibold))
                         Text(files.count == 1 ? "1 file" : "\(files.count) files").foregroundStyle(.secondary)
                         HStack {
-                            Menu("New Document") {
-                                ForEach(DocumentTemplate.allCases) { t in Button(t.title) { newDocument(t) } }
-                            }.fixedSize()
+                            Button("New from Template…") { picking = true }.buttonStyle(.borderedProminent)
                             Button("New Whiteboard") { newBoard() }
                             Button("Show in Finder") { store.reveal(folder) }
                         }
@@ -146,6 +147,19 @@ struct SubjectDetail: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .sheet(isPresented: $picking) {
+            TemplateGallery(subject: folder.lastPathComponent, root: store.current ?? folder.deletingLastPathComponent()) { t in picking = false; create(t) } onCancel: { picking = false }
+                .frame(width: 640, height: 600)
+        }
+    }
+
+    private func create(_ t: CobrainTemplate) {
+        guard let root = store.current else { return }
+        if let url = TemplateWriter.create(t, in: folder, subject: folder.lastPathComponent, setup: { DocumentModel.applyDefaultLanguage($0) }) {
+            store.reload(); refresh += 1
+            open(url)
+        }
+        _ = root
     }
 
     private func open(_ url: URL) {

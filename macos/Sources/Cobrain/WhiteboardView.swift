@@ -3,13 +3,21 @@ import SwiftUI
 
 /// One whiteboard window.
 struct BoardRoot: View {
+    /// The shapes of a template: a built-in one by id, or one of yours by file path.
+    static func elements(of template: String) -> [BoardElement] {
+        for t in TemplateCatalog.boards where t.id == template { if case .board(let make) = t.source { return make() } }
+        if let data = try? Data(contentsOf: URL(fileURLWithPath: template)), let f = try? JSONDecoder().decode(BoardFile.self, from: data) { return f.elements }
+        return []
+    }
+
     @StateObject private var board: BoardModel
 
     private let url: URL?
+    private let template: String?
 
-    init(url: URL? = nil) { _board = StateObject(wrappedValue: BoardModel()); self.url = url }
+    init(url: URL? = nil, template: String? = nil) { _board = StateObject(wrappedValue: BoardModel()); self.url = url; self.template = template }
     /// Snapshot mode: show an existing model.
-    init(preview: BoardModel) { _board = StateObject(wrappedValue: preview); url = nil }
+    init(preview: BoardModel) { _board = StateObject(wrappedValue: preview); url = nil; template = nil }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,7 +33,16 @@ struct BoardRoot: View {
         .background(WindowAccessor { board.attach(to: $0) })
         .navigationTitle(board.title)
         .focusedSceneObject(board)
-        .onAppear { if let url, board.fileURL == nil { board.open(url) } }
+        .onAppear {
+            if let url, board.fileURL == nil { board.open(url) }
+            else if let template, board.elements.isEmpty { board.elements = BoardRoot.elements(of: template); board.fitContent() }
+        }
+        .sheet(isPresented: $board.savingTemplate) {
+            let root = ProjectStore.shared.current ?? ProjectStore.defaultRoot
+            SaveTemplateForm(subject: board.fileURL.flatMap { TemplateStore(root: root).subject(of: $0) }, name: board.fileURL?.deletingPathExtension().lastPathComponent ?? "") { name, all in
+                board.saveAsTemplate(name: name, forAll: all, root: root); board.savingTemplate = false
+            } onCancel: { board.savingTemplate = false }
+        }
     }
 }
 

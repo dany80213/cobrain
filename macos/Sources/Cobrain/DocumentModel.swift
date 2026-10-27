@@ -12,6 +12,7 @@ final class DocumentModel: ObservableObject {
     @Published var lastError: String?
     @Published var dialog: DialogKind?
     @Published var showBackstage = false
+    @Published var savingTemplate = false
     /// A file was opened in this window (the Home page is shown only until then).
     private(set) var opened = false
     @Published var autosave = false
@@ -360,6 +361,41 @@ final class DocumentModel: ObservableObject {
         diskDate = nil
         refresh()
         revision += 1
+    }
+
+    /// A new, unsaved document made from a template (built in, or one of yours).
+    func newDocument(from t: CobrainTemplate, subject: String = "") {
+        guard confirmDiscardingChanges() else { return }
+        let e: Engine?
+        switch t.source {
+        case .document(let blocks):
+            e = Engine()
+            if let e { Self.applyDefaultLanguage(e); TemplateWriter.write(blocks, into: e, title: t.id == "blank" ? "" : t.title, subject: subject) }
+        case .file(let url): e = Engine(path: url.path)
+        case .board: return
+        }
+        guard let e else { return }
+        engine = e
+        fileURL = nil
+        diskDate = nil
+        opened = true
+        showBackstage = false
+        refresh()
+        revision += 1
+    }
+
+    /// Keep this document as a template, for every subject or for the one it is in.
+    func saveAsTemplate(name: String, forAll: Bool) {
+        let root = ProjectStore.shared.current ?? ProjectStore.defaultRoot
+        guard let url = fileURL else { return }
+        save()
+        let store = TemplateStore(root: root)
+        let scope = forAll ? nil : store.subject(of: url)
+        if !store.save(copyOf: url, name: name, scope: scope) { lastError = "Could not save the template" }
+    }
+
+    var templateSubject: String? {
+        fileURL.flatMap { TemplateStore(root: ProjectStore.shared.current ?? ProjectStore.defaultRoot).subject(of: $0) }
     }
 
     func open() {

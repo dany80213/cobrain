@@ -219,6 +219,7 @@ final class BoardModel: ObservableObject {
     @Published var fileURL: URL?
     @Published var dirty = false
     @Published var marquee: CGRect?
+    @Published var savingTemplate = false
     @Published private(set) var canUndo = false
     @Published private(set) var canRedo = false
     @Published var fill: BoardColor = .hex(0x7C6CF0)
