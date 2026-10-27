@@ -103,7 +103,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct CobrainApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
-    init() { snapshotIfRequested() }
+    init() {
+        snapshotIfRequested()
+        Updater.shared.start()
+    }
 
     var body: some Scene {
         WindowGroup(id: "document") { WindowRoot(url: nil) }
@@ -116,8 +119,13 @@ struct CobrainCommands: Commands {
     @FocusedObject private var model: DocumentModel?
     @FocusedObject private var board: BoardModel?
     @Environment(\.openWindow) private var openWindow
+    @AppStorage("checkForUpdatesAutomatically") private var autoUpdate = true
 
     var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            Button("Check for Updates…") { Updater.shared.check(userInitiated: true) }
+            Toggle("Check for Updates Automatically", isOn: $autoUpdate)
+        }
         CommandGroup(replacing: .newItem) {
             Button("New") { openWindow(id: "document") }.keyboardShortcut("n")
             Button("New Whiteboard") { openWindow(id: "whiteboard") }.keyboardShortcut("n", modifiers: [.command, .option])

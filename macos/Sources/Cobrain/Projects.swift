@@ -165,12 +165,17 @@ final class ProjectStore: ObservableObject {
         return url
     }
 
-    /// A blank Word document in `folder`; returns its URL.
-    func makeDocument(named name: String, in folder: URL) -> URL? {
+    /// A Word document in `folder`, blank or from `template`; returns its URL.
+    func makeDocument(named name: String, in folder: URL, template: DocumentTemplate = .blank) -> URL? {
         guard let clean = cleanName(name) else { return nil }
         let base = clean.lowercased().hasSuffix(".docx") ? String(clean.dropLast(5)) : clean
         let url = uniqueURL(folder.appendingPathComponent(base).appendingPathExtension("docx"))
-        guard let blank = Engine(), blank.save(to: url.path) else { lastError = "Could not create \(url.lastPathComponent)"; return nil }
+        let subject = place(of: url).components(separatedBy: " › ").first ?? ""
+        guard let blank = Engine() else { lastError = "Could not create \(url.lastPathComponent)"; return nil }
+        // The language first, so the template's text is checked in it too.
+        DocumentModel.applyDefaultLanguage(blank)
+        template.fill(blank, title: base, subject: subject)
+        guard blank.save(to: url.path) else { lastError = "Could not create \(url.lastPathComponent)"; return nil }
         reload()
         return url
     }
@@ -239,6 +244,9 @@ struct ProjectsPane: View {
     @State private var prompt: NamePrompt?
     @State private var promptText = ""
     @State private var toTrash: ProjectItem?
+    @StateObject private var search = ProjectSearch()
+    @State private var query = ""
+    @State private var exporting = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -251,18 +259,24 @@ struct ProjectsPane: View {
             projectPicker
             if let project = store.current {
                 sharingRow(project)
+                searchField(project)
                 Divider()
-                if store.tree.isEmpty {
-                    Text("Add a subject (e.g. Math, History), then create documents in it.")
-                        .font(.caption).foregroundStyle(.secondary)
+                if !query.trimmingCharacters(in: .whitespaces).isEmpty {
+                    searchResults
+                } else {
+                    if store.tree.isEmpty {
+                        Text("Add a subject (e.g. Math, History), then create documents in it.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    List {
+                        OutlineGroup(store.tree, children: \.children) { row($0) }
+                    }
+                    .listStyle(.sidebar)
+                    .contextMenu { Button("New Subject…") { askNewSubject(in: project) } }
+                    Button { askNewSubject(in: project) } label: { Label("New Subject", systemImage: "plus") }
+                        .buttonStyle(.borderless)
                 }
-                List {
-                    OutlineGroup(store.tree, children: \.children) { row($0) }
-                }
-                .listStyle(.sidebar)
-                .contextMenu { Button("New Subject…") { askNewSubject(in: project) } }
-                Button { askNewSubject(in: project) } label: { Label("New Subject", systemImage: "plus") }
-                    .buttonStyle(.borderless)
+                if exporting { ProgressView("Exporting PDF…").controlSize(.small) }
             } else {
                 Text("A project keeps your subjects, folders and documents together, and can be shared with classmates.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -301,6 +315,7 @@ struct ProjectsPane: View {
             Button("Add Existing Folder…") { store.addExistingProject() }
             if let c = store.current {
                 Divider()
+                Button("Export Project as PDF…") { exportPDF(c, name: c.lastPathComponent) }
                 Button("Rename Project…") { askRename(ProjectItem(url: c, isFolder: true, depth: -1)) }
                 Button("Show in Finder") { store.reveal(c) }
                 Button("Remove from List") { store.removeFromList(c) }
@@ -344,8 +359,11 @@ struct ProjectsPane: View {
             .onTapGesture { if !item.isFolder { openDocument(item) } }
             .contextMenu {
                 if item.isFolder {
-                    Button("New Document…") { askNewDocument(in: item.url) }
+                    Menu("New Document") {
+                        ForEach(DocumentTemplate.allCases) { t in Button("\(t.title)…") { askNewDocument(in: item.url, template: t) } }
+                    }
                     Button("New Folder…") { askNewFolder(in: item.url) }
+                    Button("Export as PDF…") { exportPDF(item.url, name: item.name) }
                     Divider()
                 } else {
                     Button("Open") { openDocument(item) }
@@ -376,9 +394,69 @@ struct ProjectsPane: View {
     private func askNewSubject(in project: URL) { ask("New Subject", "e.g. Mathematics") { store.makeFolder(named: $0, in: project) } }
     private func askNewFolder(in folder: URL) { ask("New Folder", "e.g. Lecture Notes") { store.makeFolder(named: $0, in: folder) } }
 
-    private func askNewDocument(in folder: URL) {
-        ask("New Document", "e.g. Lesson 1") { name in
-            if let url = store.makeDocument(named: name, in: folder) { model.openReplacingCurrent(url) }
+    private func askNewDocument(in folder: URL, template: DocumentTemplate = .blank) {
+        let title = template == .blank ? "New Document" : "New \(template.title)"
+        ask(title, "e.g. Lesson 1") { name in
+            if let url = store.makeDocument(named: name, in: folder, template: template) { model.openReplacingCurrent(url) }
+        }
+    }
+
+    // MARK: Search
+
+    private func searchField(_ project: URL) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField("Search in project", text: $query).textFieldStyle(.plain)
+                .onChange(of: query) { _, q in search.search(q, in: store.documents(in: project)) }
+            if !query.isEmpty {
+                Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain).foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 7).padding(.vertical, 4)
+        .background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .controlBackgroundColor)))
+    }
+
+    private var searchResults: some View {
+        List {
+            if search.searching { ProgressView().controlSize(.small) }
+            if !search.searching, search.hits.isEmpty, !search.searched.isEmpty {
+                Text("No documents contain “\(search.searched)”.").font(.caption).foregroundStyle(.secondary)
+            }
+            ForEach(search.hits) { hit in
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack {
+                        Label(hit.name, systemImage: "doc.text").fontWeight(.semibold)
+                        Spacer()
+                        Text("\(hit.count)").font(.caption).foregroundStyle(.secondary)
+                    }
+                    if !hit.place.isEmpty { Text(hit.place).font(.caption2).foregroundStyle(.secondary) }
+                    ForEach(Array(hit.snippets.enumerated()), id: \.offset) { Text($0.element).font(.caption).lineLimit(2) }
+                }
+                .padding(.vertical, 2)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    model.openReplacingCurrent(hit.url)
+                    if model.fileURL == hit.url { model.run("edit.find", ["text": search.searched]) }
+                }
+            }
+        }
+        .listStyle(.sidebar)
+    }
+
+    // MARK: Export
+
+    /// Every document of a subject (or folder, or the whole project) as one PDF, then opens it.
+    private func exportPDF(_ folder: URL, name: String) {
+        let docs = store.documents(in: folder).map(\.url)
+        guard !docs.isEmpty else { store.lastError = "“\(name)” has no documents to export."; return }
+        // The open document may have edits AutoSave hasn't written yet.
+        if let open = model.fileURL, docs.contains(open), model.engine.isDirty { model.save() }
+        guard let dest = model.askPDFDestination(suggestedName: name + ".pdf") else { return }
+        exporting = true
+        ProjectStore.exportPDF(docs, to: dest) { error in
+            exporting = false
+            if let error { store.lastError = error }
+            if FileManager.default.fileExists(atPath: dest.path) { NSWorkspace.shared.open(dest) }
         }
     }
 

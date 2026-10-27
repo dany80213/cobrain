@@ -3,12 +3,13 @@ import SwiftUI
 /// Bottom bar like WordCraft's: page, words, language on the left; focus, views and zoom on the right.
 struct StatusBar: View {
     @ObservedObject var model: DocumentModel
+    @AppStorage("proofingLanguage") private var newDocumentLanguage = Proofing.defaultTag
 
     var body: some View {
         HStack(spacing: 14) {
             Text("Page \(model.caretPage + 1) of \(model.engine.pageCount)")
             Text("\(model.wordCount) words")
-            Text("English (United States)")
+            languageMenu
             Spacer()
             Label("Focus", systemImage: "arrow.up.left.and.arrow.down.right")
             Image(systemName: "book")
@@ -26,6 +27,27 @@ struct StatusBar: View {
         .padding(.horizontal, 12).frame(height: 26)
         .background(Color(nsColor: .windowBackgroundColor))
         .overlay(alignment: .top) { Divider() }
+    }
+
+    /// The proofing language at the caret; choosing one checks the whole document in it.
+    private var languageMenu: some View {
+        Menu {
+            Section("This document") {
+                ForEach(Proofing.languages) { l in
+                    Toggle(l.name, isOn: Binding(get: { model.language == l.tag }, set: { _ in model.setDocumentLanguage(l.tag) }))
+                }
+            }
+            Section("New documents") {
+                ForEach(Proofing.languages) { l in
+                    Toggle(l.name, isOn: Binding(get: { newDocumentLanguage == l.tag }, set: { _ in model.setDefaultLanguage(l.tag) }))
+                }
+            }
+        } label: {
+            Text(Proofing.name(for: model.language ?? "en-US"))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Proofing language")
     }
 }
 

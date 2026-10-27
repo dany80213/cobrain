@@ -18,17 +18,31 @@ final class Engine {
     init?() {
         guard let h = cobrain_new_blank() else { return nil }
         handle = h
+        useUserDictionary()
     }
 
     init?(sample: Bool) {
         guard let h = cobrain_new_sample() else { return nil }
         handle = h
+        useUserDictionary()
     }
 
     init?(path: String) {
         guard let h = cobrain_open(path) else { return nil }
         handle = h
+        useUserDictionary()
     }
+
+    /// Words added with Add to Dictionary, kept across launches.
+    static let supportFolder = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Cobrain")
+
+    private func useUserDictionary() {
+        try? FileManager.default.createDirectory(at: Self.supportFolder, withIntermediateDirectories: true)
+        _ = cobrain_use_user_dictionary(handle, Self.supportFolder.path)
+    }
+
+    /// The edits so far don't count (a new document's setup).
+    func markClean() { cobrain_mark_clean(handle) }
 
     deinit { cobrain_free(handle) }
 

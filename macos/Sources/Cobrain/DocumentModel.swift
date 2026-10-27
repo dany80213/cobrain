@@ -4,7 +4,7 @@ import SwiftUI
 
 /// Observable document state shared by the window, the menus and the page view.
 final class DocumentModel: ObservableObject {
-    @Published private(set) var engine: Engine
+    @Published private(set) var engine: Engine { didSet { listStyles = [:] } }
     /// Bumped after every engine change so the page view redraws.
     @Published private(set) var revision = 0
     @Published var fileURL: URL?
@@ -132,6 +132,66 @@ final class DocumentModel: ObservableObject {
         return NSApp.runModal(for: panel)
     }
 
+    // MARK: Proofing language
+
+    /// The proofing language at the caret (`nil` when the text there has none of its own: the
+    /// engine then checks it as English).
+    var language: String? { format["lang"] as? String }
+
+    /// A blank document starts in the user's proofing language; that setup isn't an edit.
+    static func applyDefaultLanguage(_ e: Engine) {
+        _ = e.run("review.language", ["lang": Proofing.defaultTag, "default": true])
+        e.markClean()
+    }
+
+    /// Status bar › language: the whole document, and what is typed next, is checked in `tag`.
+    func setDocumentLanguage(_ tag: String) {
+        let caret = engine.caret
+        run("select.all")
+        run("review.language", ["lang": tag, "default": true])
+        if let c = caret { click(page: c.page, x: c.x, y: c.top + c.height / 2) }
+        offerDictionary(for: tag)
+    }
+
+    /// Status bar › New documents: the language blank documents start in.
+    func setDefaultLanguage(_ tag: String) {
+        Proofing.defaultTag = tag
+        offerDictionary(for: tag)
+    }
+
+    /// Spelling in `tag` needs a dictionary Cobrain can't ship but can download: ask first.
+    func offerDictionary(for tag: String) {
+        guard Proofing.missingDictionary(tag, engine: engine) else { return }
+        let name = Proofing.name(for: tag)
+        let alert = NSAlert()
+        alert.messageText = "Download the \(name) dictionary?"
+        alert.informativeText = "Spelling in \(name) needs a dictionary that Cobrain can’t include. Download the free LibreOffice dictionary (\(Proofing.downloadSize(tag)), GPL licence) into your Spelling folder?"
+        alert.addButton(withTitle: "Download")
+        alert.addButton(withTitle: "Not Now")
+        guard runSheet(alert) == .alertFirstButtonReturn else { return }
+        Proofing.downloadDictionary(tag) { [weak self] error in
+            guard let self else { return }
+            if let error {
+                let failed = NSAlert()
+                failed.messageText = "The dictionary wasn’t downloaded"
+                failed.informativeText = error
+                _ = self.runSheet(failed)
+                return
+            }
+            Proofing.reloadDictionaries(engine: self.engine)
+            self.refresh()
+            self.revision += 1
+        }
+    }
+
+    /// Asks where to save a PDF, as a sheet on this window; `nil` if cancelled.
+    func askPDFDestination(suggestedName: String) -> URL? {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.pdf]
+        panel.nameFieldStringValue = suggestedName
+        return runSheet(panel) == .OK ? panel.url : nil
+    }
+
     private func updateEditedMark() {
         window?.isDocumentEdited = engine.isDirty
         window?.representedURL = fileURL
@@ -176,17 +236,36 @@ final class DocumentModel: ObservableObject {
 
     var title: String { fileURL?.lastPathComponent ?? "Untitled" }
 
-    func run(_ id: String, _ params: [String: Any] = [:]) {
+    /// Runs an engine command and updates everything that shows the document. Returns the
+    /// command's result, or `nil` when it failed (`lastError` says why).
+    @discardableResult
+    func run(_ id: String, _ params: [String: Any] = [:]) -> Any? {
+        var result: Any?
         switch engine.run(id, params) {
         case .success(let r):
             lastError = nil
             handleClipboard(id, r)
+            result = r
         case .failure(let e): lastError = e.message
         }
         handleUIRequests()
         refresh()
         revision += 1
         scheduleAutosave()
+        return result
+    }
+
+    /// The list each Pages-style list was last defined as in this document, so choosing the
+    /// style the caret's list already has does nothing (instead of starting a new list).
+    private var listStyles: [Int: ListStyle] = [:]
+
+    /// Home › Paragraph › Lists: number the selected paragraphs in `style`, or take them out of
+    /// any list (`nil`). Paragraphs already in a list keep their level.
+    func applyList(_ style: ListStyle?) {
+        guard let style else { run("para.bullets", ["off": true]); return }
+        if case .success(let r) = engine.run("list.get"), let num = (r as? [String: Any])?["num"] as? Int, listStyles[num] == style { return }
+        let r = run("list.define", ["levels": style.levels, "name": style.title])
+        if let num = (r as? [String: Any])?["num"] as? Int { listStyles[num] = style }
     }
 
     /// AutoSave: write the file two seconds after the last change (only for a document that has a file).
@@ -275,7 +354,7 @@ final class DocumentModel: ObservableObject {
 
     func newDocument(template: String = "blank") {
         guard confirmDiscardingChanges(), let e = Engine() else { return }
-        if template != "blank" { _ = e.run("file.new", ["template": template]) }
+        if template != "blank" { _ = e.run("file.new", ["template": template]) } else { Self.applyDefaultLanguage(e) }
         engine = e
         fileURL = nil
         diskDate = nil
