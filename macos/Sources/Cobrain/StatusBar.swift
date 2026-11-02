@@ -10,6 +10,7 @@ struct StatusBar: View {
             Text("Page \(model.caretPage + 1) of \(model.engine.pageCount)")
             Text("\(model.wordCount) words")
             languageMenu
+            UpdateStatusItem()
             Spacer()
             Label("Focus", systemImage: "arrow.up.left.and.arrow.down.right")
             Image(systemName: "book")

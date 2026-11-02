@@ -21,6 +21,8 @@ final class Updater: ObservableObject {
     }
 
     @Published private(set) var state: State = .idle
+    /// The version whose banner was closed with Later: it stays closed until a newer one appears.
+    @Published var bannerDismissedFor: String?
     @AppStorage("checkForUpdatesAutomatically") var automatic = true
 
     static let repo = "dany80213/cobrain"
@@ -184,6 +186,17 @@ final class Updater: ObservableObject {
         }
     }
 
+    /// "Update failed": says why, and offers to look for the update again.
+    func showFailure() {
+        guard case .failed(let why) = state else { return }
+        let alert = NSAlert()
+        alert.messageText = "Cobrain wasn’t updated"
+        alert.informativeText = why
+        alert.addButton(withTitle: "Try Again")
+        alert.addButton(withTitle: "Close")
+        Self.ask(alert) { if $0 == .alertFirstButtonReturn { self.check(userInitiated: true) } }
+    }
+
     private func offerRestart() {
         let alert = NSAlert()
         alert.messageText = "Cobrain was updated"
@@ -257,7 +270,8 @@ final class Updater: ObservableObject {
     }
 }
 
-/// Title bar: "Update" while a new version is waiting, progress while updating.
+/// Title bar: "Update" while a new version is waiting, progress while updating, and "Update
+/// Failed" (orange) after a failure, so the button never just disappears.
 struct UpdateButton: View {
     @ObservedObject var updater: Updater = .shared
 
@@ -273,8 +287,120 @@ struct UpdateButton: View {
             HStack(spacing: 6) { ProgressView().controlSize(.small); Text(step).font(.caption) }
         case .ready:
             Button { updater.restart() } label: { Label("Restart to Update", systemImage: "arrow.clockwise.circle.fill") }
+        case .failed:
+            Button { updater.showFailure() } label: {
+                Label { Text("Update Failed") } icon: { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange) }
+                    .labelStyle(.titleAndIcon)
+            }
+            .help("See why Cobrain wasn’t updated, and try again")
         default:
             EmptyView()
+        }
+    }
+}
+
+/// A strip across the top of the window (above the Home page too) while there is something to
+/// do about an update: a new version, the update running, a restart, or a failure.
+struct UpdateBanner: View {
+    @ObservedObject var updater: Updater = .shared
+
+    var body: some View {
+        switch updater.state {
+        case .available(let behind, let latest) where updater.bannerDismissedFor != latest:
+            bar(.green, "arrow.down.circle.fill", "A new version of Cobrain is available",
+                behind == 1 ? "1 change on GitHub" : "\(behind) changes on GitHub") {
+                Button("Later") { updater.bannerDismissedFor = latest }
+                Button("Update") { updater.offerUpdate() }.buttonStyle(.borderedProminent).tint(.green)
+            }
+        case .updating(let step):
+            bar(.accentColor, nil, "Updating Cobrain", step + " You can keep working.") { ProgressView().controlSize(.small) }
+        case .ready:
+            bar(.green, "checkmark.circle.fill", "Cobrain was updated", "Restart to use the new version.") {
+                Button("Restart") { updater.restart() }.buttonStyle(.borderedProminent).tint(.green)
+            }
+        case .failed:
+            bar(.orange, "exclamationmark.triangle.fill", "Cobrain wasn’t updated", "Nothing was changed.") {
+                Button("Details") { updater.showFailure() }
+                Button("Try Again") { updater.check(userInitiated: true) }.buttonStyle(.borderedProminent).tint(.orange)
+            }
+        default:
+            EmptyView()
+        }
+    }
+
+    private func bar(_ color: Color, _ icon: String?, _ title: String, _ detail: String, @ViewBuilder actions: () -> some View) -> some View {
+        HStack(spacing: 10) {
+            if let icon { Image(systemName: icon).foregroundStyle(color).font(.system(size: 16)) }
+            Text(title).fontWeight(.semibold)
+            Text(detail).foregroundStyle(.secondary).lineLimit(1)
+            Spacer(minLength: 8)
+            actions().controlSize(.small)
+        }
+        .font(.system(size: 12))
+        .padding(.horizontal, 12).padding(.vertical, 7)
+        .background(color.opacity(0.14))
+        .overlay(alignment: .bottom) { Divider() }
+    }
+}
+
+/// Status bar: where updates always show, even with nothing new (click to check now).
+struct UpdateStatusItem: View {
+    @ObservedObject var updater: Updater = .shared
+
+    var body: some View {
+        if updater.canUpdate {
+            Button(action: act) {
+                HStack(spacing: 4) {
+                    switch updater.state {
+                    case .checking, .updating: ProgressView().controlSize(.mini)
+                    default: Image(systemName: icon).foregroundStyle(color)
+                    }
+                    Text(text)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Updates from GitHub (checked at launch and every 6 hours). Click to check now.")
+        }
+    }
+
+    private var text: String {
+        switch updater.state {
+        case .idle: "Check for updates"
+        case .checking: "Checking…"
+        case .upToDate: "Up to date"
+        case .available: "Update available"
+        case .updating: "Updating…"
+        case .ready: "Restart to update"
+        case .failed: "Update failed"
+        }
+    }
+
+    private var icon: String {
+        switch updater.state {
+        case .upToDate: "checkmark.circle"
+        case .available: "arrow.down.circle.fill"
+        case .ready: "arrow.clockwise.circle.fill"
+        case .failed: "exclamationmark.triangle.fill"
+        default: "arrow.triangle.2.circlepath"
+        }
+    }
+
+    private var color: Color {
+        switch updater.state {
+        case .available, .ready: .green
+        case .failed: .orange
+        default: .secondary
+        }
+    }
+
+    private func act() {
+        switch updater.state {
+        case .available: updater.offerUpdate()
+        case .ready: updater.restart()
+        case .failed: updater.showFailure()
+        case .checking, .updating: break
+        default: updater.check(userInitiated: true)
         }
     }
 }
