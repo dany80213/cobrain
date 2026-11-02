@@ -271,7 +271,7 @@ final class Updater: ObservableObject {
 }
 
 /// Title bar: "Update" while a new version is waiting, progress while updating, and "Update
-/// Failed" (orange) after a failure, so the button never just disappears.
+/// Failed" (orange) after a failure, and "Check for Updates" otherwise, so it is always there.
 struct UpdateButton: View {
     @ObservedObject var updater: Updater = .shared
 
@@ -293,8 +293,16 @@ struct UpdateButton: View {
                     .labelStyle(.titleAndIcon)
             }
             .help("See why Cobrain wasn’t updated, and try again")
-        default:
-            EmptyView()
+        case .checking:
+            HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Checking…").font(.caption) }
+        case .idle, .upToDate:
+            // Always there on builds that can update, so checking by hand is one click away.
+            if updater.canUpdate {
+                Button { updater.check(userInitiated: true) } label: {
+                    Label("Check for Updates", systemImage: "arrow.triangle.2.circlepath").labelStyle(.titleAndIcon)
+                }
+                .help(updater.state == .upToDate ? "Cobrain is up to date. Click to check GitHub again." : "Check GitHub for a new version of Cobrain")
+            }
         }
     }
 }
