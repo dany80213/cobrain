@@ -40,5 +40,7 @@ struct ContentView: View {
                 ToolbarItemGroup(placement: .primaryAction) { TitleActions(model: model) }
             }
             .overlay { if model.showBackstage { BackstageView(model: model) } }
+            // Above the Home page too, so a new version is the first thing you see.
+            .safeAreaInset(edge: .top, spacing: 0) { UpdateBanner() }
     }
 }
